@@ -19,7 +19,8 @@ npm install
 npm run dev            # Chrome with hot reload
 npm run dev:firefox    # Firefox with hot reload
 npm run compile        # typecheck
-npm test               # unit tests
+npm test               # unit tests (Vitest, 55 tests)
+npm run test:e2e       # browser tests in a real Brave (41 checks); see e2e/README.md
 npm run build          # -> .output/chrome-mv3
 npm run build:firefox  # -> .output/firefox-mv3
 npm run zip            # store-ready zip
@@ -37,5 +38,8 @@ npm run zip            # store-ready zip
 entrypoints/
   background.ts      service worker / background script
   popup/             toolbar popup (index.html, main.ts, style.css)
+  widget.content/    on-page timer widget (content script)
+utils/               pure logic with unit tests (lock, retry, position, time)
+e2e/                 browser tests (Playwright driving Brave); see e2e/README.md
 wxt.config.ts        manifest + build config
 ```

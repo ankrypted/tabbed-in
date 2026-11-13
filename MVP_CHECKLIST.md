@@ -61,6 +61,7 @@ Minimum functional requirements for **Tabbed In**, with live status. Full detail
 | Popup rewrite (pause/resume, validation, expired view) | ⬜ |
 | On-page widget (content script, Shadow DOM, drag, minimize, expiry prompt) | 🟡 drag + remembered position built; minimize, pause/resume, expiry prompt pending |
 | Unit tests (position clamping, time formatting, lock decisions, circuit breaker) | ✅ 55 tests passing |
+| Browser tests in the repo (`npm run test:e2e`, `e2e/`) | ✅ 41 checks, 5 files, all passing |
 | Tab-switch lock with safety nets | ✅ verified in Brave (20/20 checks, plus 5/5 for the click-during-mouse-down failure). Real mouse clicks on the tab strip can't be automated, so please confirm by hand |
 | Fallback prompt window for restricted pages | ⬜ |
 | Manual test pass (NFR-Q2) and escape-hatch tests (NFR-Q3) | ⬜ |

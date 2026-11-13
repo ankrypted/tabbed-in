@@ -17,9 +17,12 @@
     "compile": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
+    "test:e2e": "wxt build && node e2e/run.mjs",
+    "test:e2e:only": "node e2e/run.mjs",
     "postinstall": "wxt prepare"
   },
   "devDependencies": {
+    "playwright-core": "^1.65.0",
     "typescript": "^5.9.3",
     "vite": "^8.1.5",
     "vitest": "^3.2.4",
