@@ -78,7 +78,7 @@ Priority: **MVP** = in the first release, **Later** = after the MVP.
 | ID | Requirement | Pri |
 |---|---|---|
 | FR-11 | While the timer is **Running** or **Expired**, switching to a different tab in the same window is reverted: the timed tab is re-activated immediately. | MVP |
-| FR-12 | While Running, new tabs opened by the user (Ctrl+T, link middle-click) are also reverted to the timed tab. Decision: are these closed or left in the background? See Open Questions. | MVP |
+| FR-12 | While Running, tabs the user opens (new-tab button, Ctrl+T, bookmarks) are closed automatically and focus returns to the timed tab. Tabs opened by a link or script on the timed page itself are kept in the background, so sites that open helper tabs keep working. (Decided 2026-11-13.) | MVP |
 | FR-13 | The lock is released when the timer is **Paused**, **Stopped**, or the expiry prompt is resolved. | MVP |
 | FR-14 | Navigation **within** the timed tab (links, back/forward) is allowed. | MVP |
 | FR-15 | The user is told why they cannot switch (badge/notice in popup: "Pause or stop the timer to leave this tab"). | MVP |

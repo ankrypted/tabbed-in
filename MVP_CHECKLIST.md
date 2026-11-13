@@ -19,7 +19,7 @@ Minimum functional requirements for **Tabbed In**, with live status. Full detail
 ## Focus lock
 | # | Requirement | Status | Notes |
 |---|---|---|---|
-| 5 | While running, switching to another tab in the same window is reverted, and the user is told why | ✅ | Verified in Brave. New tabs stay open in the background while focus snaps back |
+| 5 | While running, switching to another tab in the same window is reverted, and the user is told why | ✅ | Verified in Brave. Tabs opened with the new-tab button / Ctrl+T are closed automatically; tabs opened by a link on the timed page are kept in the background. Focus always returns to the timed tab |
 | 6 | Navigation within the timed tab is still allowed | ✅ | Verified; the widget also re-appears after the navigation |
 
 ## Pause and stop
@@ -60,8 +60,8 @@ Minimum functional requirements for **Tabbed In**, with live status. Full detail
 | Background rewrite (lock, expiry state, serialized storage writes) | ⬜ |
 | Popup rewrite (pause/resume, validation, expired view) | ⬜ |
 | On-page widget (content script, Shadow DOM, drag, minimize, expiry prompt) | 🟡 drag + remembered position built; minimize, pause/resume, expiry prompt pending |
-| Unit tests (position clamping, time formatting, lock decisions, circuit breaker) | ✅ 35 tests passing |
-| Tab-switch lock with safety nets | ✅ verified in Brave (15/15 automated checks) |
+| Unit tests (position clamping, time formatting, lock decisions, circuit breaker) | ✅ 55 tests passing |
+| Tab-switch lock with safety nets | ✅ verified in Brave (20/20 checks, plus 5/5 for the click-during-mouse-down failure). Real mouse clicks on the tab strip can't be automated, so please confirm by hand |
 | Fallback prompt window for restricted pages | ⬜ |
 | Manual test pass (NFR-Q2) and escape-hatch tests (NFR-Q3) | ⬜ |
 | Real icons | ⬜ |
@@ -73,4 +73,5 @@ Minimum functional requirements for **Tabbed In**, with live status. Full detail
 - Does focusing another browser window count as leaving the tab?
 - Safety numbers: circuit breaker at 5 switches in 3 seconds; expired-prompt timeout of 30 minutes.
 - Widget defaults: starting corner, size, and whether it auto-minimizes.
+- Resolved: new tabs opened while locked are closed (links on the timed page excepted).
 - If the user denies site access, may the timer still start (as drafted)?

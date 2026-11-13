@@ -1,7 +1,8 @@
 // Background script: timers, badges, the on-page widget, and the tab-switch lock.
 // Still to come: the Running/Paused/Expired state machine (see REQUIREMENTS.md).
 
-import { decideLockAction, recordRevert, type Timers } from '../utils/lock';
+import { decideLockAction, recordRevert, shouldCloseNewTab, type Timers } from '../utils/lock';
+import { retry } from '../utils/retry';
 
 const KEY = 'timers';
 
@@ -118,6 +119,29 @@ async function releaseLock(tabId: number, reason: string) {
   await sendToTab(tabId, { type: 'lock-released', reason });
 }
 
+/**
+ * Bring the timed tab back to the front. Chrome fires onActivated on mouse-DOWN
+ * over a tab and rejects tabs.update until the click ends, so retry. Each try
+ * re-checks that the lock is still on (the user may have stopped the timer in
+ * the meantime). Returns true if the timed tab was activated.
+ *
+ * Failing here is NOT a reason to release the lock: not being able to enforce
+ * can't trap anyone, so we just log and try again on the next activation.
+ */
+async function returnToTimedTab(timedTabId: number): Promise<boolean> {
+  try {
+    return await retry(async () => {
+      const t = (await getTimers())[timedTabId];
+      if (!t || t.lockOff) return false; // lock released while we were retrying
+      await browser.tabs.update(timedTabId, { active: true });
+      return true;
+    });
+  } catch (err) {
+    console.warn('[tabbed-in] could not return to the timed tab', err);
+    return false;
+  }
+}
+
 async function enforceLock(activation: { tabId: number; windowId: number }) {
   try {
     const timers = await getTimers();
@@ -146,11 +170,48 @@ async function enforceLock(activation: { tabId: number; windowId: number }) {
       return;
     }
 
-    await browser.tabs.update(timedTabId, { active: true });
-    await sendToTab(timedTabId, { type: 'lock-blocked' });
+    if (await returnToTimedTab(timedTabId)) {
+      await sendToTab(timedTabId, { type: 'lock-blocked' });
+    }
   } catch (err) {
-    // Safe mode: never leave the lock held after an error.
+    // Safe mode: a bug in the lock logic must never leave the lock held.
     console.error('[tabbed-in] lock error, releasing all locks', err);
+    try {
+      const timers = await getTimers();
+      for (const t of Object.values(timers)) t.lockOff = true;
+      await setTimers(timers);
+    } catch {}
+  }
+}
+
+/**
+ * Close tabs the user opens while locked (new-tab button, Ctrl+T) so nothing is
+ * left to click. Tabs opened by a link on the timed page are kept. Focus is
+ * handled by enforceLock (onActivated), which also feeds the circuit breaker,
+ * so closing here does not count reverts a second time.
+ */
+async function closeNewTabIfLocked(tab: {
+  id?: number;
+  windowId: number;
+  openerTabId?: number;
+  url?: string;
+  pendingUrl?: string;
+}) {
+  try {
+    const decision = shouldCloseNewTab(await getTimers(), tab, Date.now());
+    if (decision.action !== 'close' || tab.id === undefined) return;
+    const newTabId = tab.id;
+    try {
+      await retry(() => browser.tabs.remove(newTabId)); // same mouse-down caveat as above
+    } catch (err) {
+      // Could not close it; the lock still keeps focus on the timed tab.
+      console.warn('[tabbed-in] could not close the new tab', err);
+    }
+    if (await returnToTimedTab(decision.timerTabId)) {
+      await sendToTab(decision.timerTabId, { type: 'lock-blocked' });
+    }
+  } catch (err) {
+    console.error('[tabbed-in] new-tab handling failed, releasing all locks', err);
     try {
       const timers = await getTimers();
       for (const t of Object.values(timers)) t.lockOff = true;
@@ -181,6 +242,7 @@ export default defineBackground(() => {
   });
 
   browser.tabs.onActivated.addListener((info) => enforceLock(info));
+  browser.tabs.onCreated.addListener((tab) => closeNewTabIfLocked(tab));
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === 'tick') return updateBadges();

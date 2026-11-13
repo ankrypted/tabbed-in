@@ -8,3 +8,4 @@ input { width: 100%; box-sizing: border-box; padding: 6px; }
 #remaining { font-size: 24px; margin: 6px 0; }
 .hidden { display: none; }
 small { color: #888; }
+#error small { color: #d93025; }

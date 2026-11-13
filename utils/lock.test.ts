@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   decideLockAction,
+  isNewTabPage,
   MAX_END_AHEAD_MS,
   recordRevert,
+  shouldCloseNewTab,
   STALE_AFTER_MS,
   type Timers,
 } from './lock';
@@ -66,6 +68,71 @@ describe('decideLockAction', () => {
   it('skips non-numeric keys instead of throwing', () => {
     const t = { oops: { end: NOW + 1000, windowId: 1 } } as Timers;
     expect(decideLockAction(t, { tabId: 5, windowId: 1 }, NOW)).toEqual({ action: 'ignore' });
+  });
+});
+
+describe('shouldCloseNewTab', () => {
+  it('closes a tab opened with the new-tab button (no opener)', () => {
+    expect(shouldCloseNewTab(running, { id: 7, windowId: 1 }, NOW)).toEqual({
+      action: 'close',
+      timerTabId: 10,
+    });
+  });
+
+  it('keeps a tab opened by a link on the timed tab', () => {
+    expect(shouldCloseNewTab(running, { id: 7, windowId: 1, openerTabId: 10 }, NOW)).toEqual({
+      action: 'ignore',
+    });
+  });
+
+  it.each(['chrome://newtab/', 'brave://newtab/', 'edge://newtab/', 'about:newtab', 'chrome://new-tab-page/'])(
+    'closes a tab on the New Tab page (%s) even if the timed tab is its opener',
+    (url) => {
+      expect(shouldCloseNewTab(running, { id: 7, windowId: 1, openerTabId: 10, url }, NOW).action).toBe('close');
+      expect(shouldCloseNewTab(running, { id: 7, windowId: 1, openerTabId: 10, pendingUrl: url }, NOW).action).toBe('close');
+    },
+  );
+
+  it('keeps a blank or normal-URL tab that the timed page opened', () => {
+    expect(shouldCloseNewTab(running, { id: 7, windowId: 1, openerTabId: 10, url: 'about:blank' }, NOW).action).toBe('ignore');
+    expect(shouldCloseNewTab(running, { id: 7, windowId: 1, openerTabId: 10, pendingUrl: 'https://x.test/' }, NOW).action).toBe('ignore');
+  });
+
+  it('recognises New Tab pages', () => {
+    expect(isNewTabPage('brave://newtab/')).toBe(true);
+    expect(isNewTabPage('https://example.com/newtab')).toBe(false);
+    expect(isNewTabPage('about:blank')).toBe(false);
+    expect(isNewTabPage(undefined)).toBe(false);
+  });
+
+  it('closes a tab whose opener is some other tab', () => {
+    expect(shouldCloseNewTab(running, { id: 7, windowId: 1, openerTabId: 3 }, NOW).action).toBe('close');
+  });
+
+  it('ignores new tabs in another window', () => {
+    expect(shouldCloseNewTab(running, { id: 7, windowId: 2 }, NOW).action).toBe('ignore');
+  });
+
+  it('ignores new tabs when there is no timer', () => {
+    expect(shouldCloseNewTab({}, { id: 7, windowId: 1 }, NOW).action).toBe('ignore');
+  });
+
+  it('ignores new tabs once the lock was released', () => {
+    const t: Timers = { '10': { end: NOW + 300_000, windowId: 1, lockOff: true } };
+    expect(shouldCloseNewTab(t, { id: 7, windowId: 1 }, NOW).action).toBe('ignore');
+  });
+
+  it('ignores a corrupt record instead of closing anything', () => {
+    const t: Timers = { '10': { end: Number.NaN, windowId: 1 } };
+    expect(shouldCloseNewTab(t, { id: 7, windowId: 1 }, NOW).action).toBe('ignore');
+  });
+
+  it('ignores a tab with no id', () => {
+    expect(shouldCloseNewTab(running, { windowId: 1 }, NOW).action).toBe('ignore');
+  });
+
+  it('never closes the timed tab itself', () => {
+    expect(shouldCloseNewTab(running, { id: 10, windowId: 1 }, NOW).action).toBe('ignore');
   });
 });
 

@@ -49,6 +49,42 @@ export function decideLockAction(
   return { action: 'ignore' };
 }
 
+export type NewTab = {
+  id?: number;
+  windowId: number;
+  openerTabId?: number;
+  url?: string;
+  pendingUrl?: string;
+};
+export type NewTabDecision = { action: 'ignore' } | { action: 'close'; timerTabId: number };
+
+/** The browser's own New Tab page (what the + button and Ctrl+T open). */
+export function isNewTabPage(url?: string): boolean {
+  return (
+    !!url &&
+    /^((chrome|brave|edge|vivaldi|opera):\/\/(newtab|new-tab-page)|about:newtab|chrome-search:\/\/)/i.test(url)
+  );
+}
+
+/**
+ * A tab was just created while a timer may be locking this window. Close tabs
+ * the user opened themselves: anything that opens on the browser's New Tab page
+ * (+ button, Ctrl+T), and anything with no opener or an opener other than the
+ * timed tab. Keep tabs opened by a link or script on the timed page itself, so
+ * sites that open helper tabs keep working; the lock still keeps focus on the
+ * timed tab.
+ * Anything doubtful (released lock, corrupt record) means "ignore".
+ */
+export function shouldCloseNewTab(timers: Timers, tab: NewTab, now: number): NewTabDecision {
+  if (tab.id === undefined) return { action: 'ignore' };
+  const d = decideLockAction(timers, { tabId: tab.id, windowId: tab.windowId }, now);
+  if (d.action !== 'revert') return { action: 'ignore' };
+  const openedByTimedPage = tab.openerTabId === d.timerTabId;
+  const userOpened = isNewTabPage(tab.pendingUrl) || isNewTabPage(tab.url);
+  if (openedByTimedPage && !userOpened) return { action: 'ignore' };
+  return { action: 'close', timerTabId: d.timerTabId };
+}
+
 export const BREAKER_LIMIT = 5;
 export const BREAKER_WINDOW_MS = 3_000;
 

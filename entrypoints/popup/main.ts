@@ -13,16 +13,29 @@ async function main() {
 
   const start = async (minutes: number) => {
     if (!(minutes > 0)) return;
-    // Ask for site access first, in the same click (a user gesture is required),
-    // so the on-page widget can be shown. If the user declines, the timer still
-    // runs with the badge and this popup. The background also shows the widget
-    // as soon as the permission is granted, even if this popup has closed.
-    const access = browser.permissions
-      .request({ origins: ['<all_urls>'] })
-      .catch(() => false);
-    await browser.runtime.sendMessage({ type: 'start', tabId, minutes });
-    await access;
+    // Start the timer FIRST. The browser closes this popup the moment it shows
+    // the site-access dialog, so anything after that request may never run.
+    const res: { ok: boolean; error?: string } | undefined = await browser.runtime
+      .sendMessage({ type: 'start', tabId, minutes })
+      .catch(() => undefined);
+    if (!res?.ok) {
+      showError(res?.error ?? 'Could not start the timer. Try again.');
+      render();
+      return;
+    }
+    // Then ask for site access so the on-page widget can be shown (still inside
+    // the click's user-activation window). If declined, the timer and lock still
+    // work; the background shows the widget as soon as access is granted, even
+    // after this popup has closed.
+    try {
+      await browser.permissions.request({ origins: ['<all_urls>'] });
+    } catch {}
     render();
+  };
+
+  const showError = (text: string) => {
+    $('error').classList.remove('hidden');
+    $('error').querySelector('small')!.textContent = text;
   };
 
   document.querySelectorAll<HTMLButtonElement>('[data-m]').forEach((b) =>

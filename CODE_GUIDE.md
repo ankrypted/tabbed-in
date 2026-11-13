@@ -104,7 +104,8 @@ User opens a new tab or clicks another tab (same window as the timed tab)
     2b. release ─► timers[timedTab].lockOff = true; widget says "Tab lock released."
     2c. revert  ─► tabs.get(timedTab)            gone? ─► cancelTimer (drop timer and lock)
                    recordRevert(...)             more than 5 in 3 s? ─► releaseLock (breaker)
-                   tabs.update(timedTab, { active: true })
+                   returnToTimedTab: retry tabs.update(timedTab, { active: true }) every 100 ms
+                     (up to 4 s; Chrome rejects it while the mouse is still down on a tab)
                       └─► tabs.onActivated { tabId: timedTab } ─► ignore (no loop)
                    tabs.sendMessage(timedTab, { type: 'lock-blocked' })
   widget       shows "Locked in. Stop the timer to switch tabs." for 3.5 s
@@ -209,10 +210,15 @@ The widget's styles: fixed position, maximum z-index, dark card, grab/grabbing c
   - **ignore:** no timer, a different window, the timed tab itself (this prevents a revert loop), or a released lock.
   - **revert:** `tabs.update(timedTabId, { active: true })`, then tell the widget to show "Locked in...".
   - **release:** a corrupt or stale record sets `lockOff` on the timer. The timer keeps running, but the lock is gone.
-- **Safety nets:** a vanished timed tab drops the timer; more than 5 reverts in 3 s trips the circuit breaker (`recordRevert`) and releases the lock; any exception releases every lock ("safe mode").
+- `tabs.onCreated` calls `closeNewTabIfLocked`, which asks `shouldCloseNewTab`. A tab is **closed** when it opens on the browser's New Tab page (`isNewTabPage`), has no opener, or has an opener other than the timed tab. It is **kept** (in the background) when the timed page itself opened it with a normal URL. After closing, focus goes back to the timed tab and the widget shows "Locked in". This path does not feed the circuit breaker, because `onActivated` already counts the same event.
+- **Returning to the timed tab** (`returnToTimedTab`): Chrome fires `onActivated` on mouse-down and rejects `tabs.update` until the click ends, so the revert is retried every 100 ms for up to 4 s (`utils/retry.ts`). Each try re-checks that the timer still exists and the lock is on. If it still fails, it logs and gives up for that switch; it does not release the lock.
+- **Safety nets:** a vanished timed tab drops the timer; more than 5 reverts in 3 s trips the circuit breaker (`recordRevert`) and releases the lock; an exception in the lock logic itself releases every lock ("safe mode"). A failed tab switch-back does not.
 
 ### [utils/lock.ts](utils/lock.ts)
-Pure functions, no browser APIs, 15 unit tests ([lock.test.ts](utils/lock.test.ts)): `decideLockAction` (ignore / revert / release, failing open on anything doubtful) and `recordRevert` (the circuit breaker). Also defines the `TimerRecord` and `Timers` types shared with the popup.
+Pure functions, no browser APIs, 31 unit tests ([lock.test.ts](utils/lock.test.ts)): `decideLockAction` (ignore / revert / release, failing open on anything doubtful), `shouldCloseNewTab` with `isNewTabPage` (which new tabs to close), and `recordRevert` (the circuit breaker). Also defines the `TimerRecord` and `Timers` types shared with the popup.
+
+### [utils/retry.ts](utils/retry.ts)
+`retry(action, attempts = 40, delayMs = 100)`: re-runs an async action until it succeeds, rethrowing the last error. Has 4 unit tests ([retry.test.ts](utils/retry.test.ts)). Used for `tabs.update` / `tabs.remove` calls that Chrome rejects while the user's mouse is down on a tab.
 
 ### [utils/position.ts](utils/position.ts) and [utils/time.ts](utils/time.ts)
 Pure functions with no browser APIs, covered by Vitest ([position.test.ts](utils/position.test.ts), [time.test.ts](utils/time.test.ts)):
