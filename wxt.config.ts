@@ -14,7 +14,8 @@ export default defineConfig({
   manifest: {
     name: 'Tabbed In',
     description: 'Lock yourself to one tab until the timer ends.',
-    permissions: ['tabs', 'alarms', 'storage', 'scripting'],
+    // notifications + offscreen: the bell and notification when the timer ends.
+    permissions: ['tabs', 'alarms', 'storage', 'scripting', 'notifications', 'offscreen'],
     // Site access for the on-page widget is requested on first Start, not at install.
     optional_host_permissions: ['<all_urls>'],
     action: { default_title: 'Tabbed In' },

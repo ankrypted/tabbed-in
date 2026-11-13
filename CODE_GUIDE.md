@@ -8,7 +8,7 @@ What each file in **Tabbed In** does, and how they fit together. This describes 
 popup/main.ts ──sendMessage({start|cancel})──► background.ts
       ▲                                              │
       └────── reads storage.session("timers") ◄──────┘
-                                    alarms fire ─► close tab / update badge
+                                    alarms fire ─► end timer (bell + notification) / update badge
 ```
 
 The popup and the background script never share memory. They communicate through messages and shared session storage, because the background worker can be shut down by the browser at any time and must not rely on in-memory state.
@@ -122,16 +122,25 @@ alarms 'tick' fires  (wakes the worker if it was asleep)
       if the tab no longer exists ──► delete the timer and save
 ```
 
-### Flow 3: time runs out (current baseline behaviour)
+### Flow 3: time runs out (the tab is never closed)
 
 ```
 alarms 'tab-<id>' fires at the end time
-  background.ts   onAlarm
-    1. getTimers(); delete timers[tabId]; setTimers()
-    2. tabs.remove(tabId)
-         └─► tabs.onRemoved fires ──► cancelTimer(tabId)   (idempotent cleanup)
+  background.ts   onAlarm ──► finishTimer(tabId)
+    1. timer gone (cancelled meanwhile)?  or end time still in the future (stale alarm)?  ─► return
+    2. tabs.get(tabId) ─► remember the tab title for the notification
+    3. cancelTimer(tabId)   removes the record (which lifts the lock), clears the alarm,
+                            clears the 'tick' alarm if no timers remain, clears the badge,
+                            tells the widget { type:'timer-changed', end:null } ─► widget removes itself
+    4. in parallel:
+         ringBell()              offscreen.createDocument('offscreen.html', AUDIO_PLAYBACK)  (if not open)
+                                 runtime.sendMessage({ target:'offscreen', type:'play-bell' })  (retried until the page listens)
+           offscreen/main.ts     new AudioContext(); playBell(ctx)   (synthesised, see utils/bell.ts)
+                                 runtime.sendMessage({ type:'bell-played', state })
+           background            storage.session.lastBell = { at, state }   (offscreen pages have no storage)
+         showDoneNotification()  notifications.create('tabbed-in-done', "Time's up ... The tab is still open.")
 ```
-This flow changes in the MVP: instead of closing the tab, the timer moves to an Expired state and the user gets a Close tab / Add time prompt.
+On a browser with no `offscreen` API (Firefox), the background plays the bell directly.
 
 ### Flow 4: cancelling with the phrase
 
@@ -163,7 +172,7 @@ onMessage ───► startTimer ───► getTimers, setTimers, alarms.crea
           └──► cancelTimer ──► getTimers, setTimers, alarms.clear, action.setBadgeText
 
 onAlarm('tick')    ───► updateBadges ───► getTimers, setTimers, action.setBadge*
-onAlarm('tab-<id>') ──► getTimers, setTimers, tabs.remove
+onAlarm('tab-<id>') ──► finishTimer ──► cancelTimer, ringBell, showDoneNotification
 tabs.onRemoved     ───► cancelTimer
 tabs.onUpdated     ───► updateBadges
 ```
@@ -186,7 +195,7 @@ The engine. WXT builds it into a service worker (Chrome/Brave/Edge) or a backgro
 | `cancelTimer(tabId)` | Deletes the timer, clears its alarm, and clears the badge. |
 | `updateBadges()` | For each timer, shows the minutes left on that tab's badge (blue, red at 1 minute or less). Drops timers whose tab no longer exists. |
 | `runtime.onMessage` | Receives `start` and `cancel` messages from the popup and runs the matching function. |
-| `alarms.onAlarm` | `tick` refreshes badges every 30 s. `tab-<id>` fires when time is up and closes that tab. |
+| `alarms.onAlarm` | `tick` refreshes badges every 30 s. `tab-<id>` fires when time is up: the timer ends, the bell rings, a notification is shown, and the tab stays open (Flow 3). |
 | `tabs.onRemoved` | Removes the timer when its tab is closed. |
 | `tabs.onUpdated` | Re-applies the badge when a tab starts loading, because per-tab badges reset on navigation. |
 
@@ -217,6 +226,37 @@ The widget's styles: fixed position, maximum z-index, dark card, grab/grabbing c
 ### [utils/lock.ts](utils/lock.ts)
 Pure functions, no browser APIs, 31 unit tests ([lock.test.ts](utils/lock.test.ts)): `decideLockAction` (ignore / revert / release, failing open on anything doubtful), `shouldCloseNewTab` with `isNewTabPage` (which new tabs to close), and `recordRevert` (the circuit breaker). Also defines the `TimerRecord` and `Timers` types shared with the popup.
 
+### [entrypoints/offscreen/](entrypoints/offscreen/) and [utils/bell.ts](utils/bell.ts)
+A hidden page that exists only to play the bell, because a service worker has no audio. `offscreen/main.ts` listens for `{ target: 'offscreen', type: 'play-bell' }`, plays the bell, and reports back with `{ type: 'bell-played', state }` (offscreen pages can only use `chrome.runtime`). `utils/bell.ts` synthesises the sound with Web Audio, so there is no audio file: three strikes of three decaying partials. The note schedule (`bellSchedule`, `bellLength`) is pure and has 5 unit tests ([bell.test.ts](utils/bell.test.ts)).
+
+### The Windows installer ([installer/windows/](installer/windows/), [scripts/make-installer.ps1](scripts/make-installer.ps1))
+- `npm run bundle:windows` builds `.output/tabbed-in-windows-<version>.zip`: the extension zip plus `install.bat`, `install.ps1`, and a plain-text `README.txt` for friends.
+- [install.ps1](installer/windows/install.ps1) unzips the extension to `%LOCALAPPDATA%\TabbedIn\extension`, **replacing the whole folder** so no old files remain (same path every time, so the browser keeps the same extension ID and an update is just a reload). Browsers don't allow a script to add or remove an extension silently (and their preference files are signed), so it does everything except the last click:
+  - It refuses to delete a folder that isn't empty or a Tabbed In install, and refuses a zip that isn't the extension.
+  - It **reads, never writes**, the chosen browser's `Preferences` / `Secure Preferences` (opened with sharing, so it works while the browser runs) to find Tabbed In copies already added: from this folder (just reload), from another folder, whose folder is gone, or from the Web Store. It lists the others so the user can click Remove on them first.
+  - It copies the path to the clipboard and opens `brave://extensions` (or Chrome/Edge).
+  - Preference files are parsed with .NET's `JavaScriptSerializer`, because Windows PowerShell's `ConvertFrom-Json` fails on Chrome's case-clashing keys.
+  - `-Uninstall` deletes the folder (same safety check); `-UserDataDir`, `-NoOpen`, and `-NoClipboard` exist for testing.
+- **Opening the Extensions page:** Brave and Chrome ignore `brave://` / `chrome://` addresses on the command line (they open a New Tab page), so `Open-ExtensionsPage` types the address like a person would. It lists the browser's visible windows (`EnumWindows`, class `Chrome_WidgetWin_1`, owned by that browser's process), launches `--new-window`, takes the window that wasn't there before, brings that specific window to the front, and sends Ctrl+L, the address, and Enter with `SendKeys`. It does not rely on which window has focus (other apps steal it), and it only types after confirming the new window is the foreground window, twice. If anything fails it types nothing and the steps tell the user what to type; the whole step is in a try/catch so it can never abort the script. `-NoKeys` and `-NoOpen` turn it off; `TABBEDIN_DEBUG=1` prints what it sees.
+- **Gotcha fixed:** `$x = if (...) { ... } else { @() }` makes `$x` `$null`, and a `$null` in `Start-Process -ArgumentList` is rejected. The argument list is built explicitly (L-49).
+- **Exact steps:** the script ends by printing numbered steps with the real folder path (remove older copies first, Developer mode, Load unpacked, the folder window's "Folder:" box and Select Folder, what card to expect, how to pin it), or just "click reload" when the same folder is already added.
+- `npm run test:installer` builds the bundle and runs [test-install.ps1](installer/windows/test-install.ps1): 32 checks (including running `install.bat` itself, checking it has CRLF line endings, which the bundler enforces, and launching the browser with no extra arguments through a stub program), in a temp folder with fake browser profiles, so nothing real is touched. `npm run test:installer:open` runs [test-open-page.ps1](installer/windows/test-open-page.ps1), which opens a real throwaway browser window and checks the Extensions page opens.
+
+### The Linux + macOS installer ([installer/unix/](installer/unix/), [scripts/make-unix-installer.mjs](scripts/make-unix-installer.mjs))
+- `npm run bundle:unix` builds `.output/tabbed-in-linux-macos-<version>.tar.gz` with `install.sh`, `install.command` (macOS double-click), a README, and the extension zip. `make-unix-installer.mjs` writes the tar itself so the scripts keep their executable bit (Windows' tar can't set modes) and forces LF line endings (CRLF would break the shebang).
+- [install.sh](installer/unix/install.sh) is one bash script for both systems, written for macOS's bash 3.2 (no arrays or newer syntax). It does what the Windows script does: replace `~/TabbedIn/extension` completely (a visible folder, because snap-packaged Chromium can't read hidden ones), refuse to delete a folder that isn't a Tabbed In install, detect other copies by reading the profile's `Preferences` files read-only (perl with JSON::PP, else python, else it says it couldn't check), copy the path (`pbcopy`, `wl-copy`, `xclip`, or `xsel`), and print exact steps.
+- **Opening the page:** on macOS it asks the browser via `osascript` to open a tab at the address (the first time macOS asks whether Terminal may control the browser); on Linux it tries `browser --new-window <address>` and always prints how to type it by hand.
+- `npm run test:installer:unix` builds the bundle and runs [test-install.sh](installer/unix/test-install.sh): 32 checks with fake profiles, including the macOS and Linux wording, the perl-to-python fallback, and the "neither available" case. It needs bash (Git Bash works). Not yet run on a real Linux or macOS machine.
+
+### Release archives ([scripts/make-extension-tarball.mjs](scripts/make-extension-tarball.mjs), [scripts/lib/tar.mjs](scripts/lib/tar.mjs), [releases/](releases/))
+- `npm run release:extension` builds the extension and writes `releases/tabbed-in-<version>-extension.tar.gz` (one folder, `tabbed-in-<version>/`, with `manifest.json` directly inside) and `.zip` (the same files at the top level, from `wxt zip`). These are the files to share directly; `releases/README.md` is the friend-facing install guide.
+- `scripts/lib/tar.mjs` is a small dependency-free tar.gz writer (ustar), shared with the Unix installer bundler. Windows' own tar can't set file modes, and the scripts need to stay executable. The archive is reproducible: entries are sorted and the timestamp is the newest file's, so unchanged code gives identical bytes and no noisy git diff.
+- The script refuses to run if the build's version differs from `package.json`.
+- `.gitattributes` marks `*.tar.gz`, `*.zip`, and `*.png` as binary so git never alters them.
+
+### [scripts/make-icons.mjs](scripts/make-icons.mjs) and `public/icon/`
+A dependency-free script that draws a placeholder blue clock icon at 16/32/48/96/128 px (own rasteriser and PNG encoder). WXT adds the files to the manifest automatically. The notification needs an icon. Replace with real artwork before a store listing.
+
 ### [utils/retry.ts](utils/retry.ts)
 `retry(action, attempts = 40, delayMs = 100)`: re-runs an async action until it succeeds, rethrowing the last error. Has 4 unit tests ([retry.test.ts](utils/retry.test.ts)). Used for `tabs.update` / `tabs.remove` calls that Chrome rejects while the user's mouse is down on a tab.
 
@@ -243,8 +283,8 @@ Popup styling: 260 px wide, a single-line truncated tab title, button/input layo
 
 ## Tests
 
-- **Unit tests** (`npm test`, Vitest): `utils/*.test.ts`, 55 tests of the pure logic. No browser needed.
-- **Browser tests** (`npm run test:e2e`): [e2e/](e2e/) holds Playwright scripts that drive a real Brave with the built extension, 41 checks in 5 files. [e2e/helpers.mjs](e2e/helpers.mjs) launches the browser and prepares the extension copy, and [e2e/run.mjs](e2e/run.mjs) runs every `*.e2e.mjs` file. See [e2e/README.md](e2e/README.md) for what each file covers, what can't be automated, and how to add a test.
+- **Unit tests** (`npm test`, Vitest): `utils/*.test.ts`, 60 tests of the pure logic. No browser needed.
+- **Browser tests** (`npm run test:e2e`): [e2e/](e2e/) holds Playwright scripts that drive a real Brave with the built extension, 55 checks in 6 files. [e2e/helpers.mjs](e2e/helpers.mjs) launches the browser and prepares the extension copy, and [e2e/run.mjs](e2e/run.mjs) runs every `*.e2e.mjs` file. See [e2e/README.md](e2e/README.md) for what each file covers, what can't be automated, and how to add a test.
 
 ## Configuration
 
@@ -280,9 +320,7 @@ Ignores `node_modules/`, `.output/` (build output), and `.wxt/` (generated types
 - `node_modules/`: dependencies.
 
 ## Planned additions
-Per the MVP build plan:
-- A pure state-machine module with Vitest tests.
-- Focus-lock handlers in `background.ts` (`tabs.onActivated`, `tabs.onCreated`).
-- A pause/resume UI in the popup.
-- **On-page widget, remaining parts:** the drag and remembered position are built (see above). Still to add: minimize to a pill, the Running/Paused/Expired state display, pause/resume controls, and the expiry prompt (Close tab / Add time). The widget currently receives its state through messages from the background rather than reading `storage.session` directly.
-- A small fallback page for the expiry prompt on pages where the widget can't show.
+- **Pause / resume:** a paused state that keeps the remaining time, releases the lock, and resumes with a fresh alarm, with buttons in the popup and the widget.
+- **Widget:** minimize to a small pill. (It receives its state through messages from the background rather than reading `storage.session` directly.)
+- **Safety nets still to do:** a watchdog alarm that caps how long the lock can hold, and an explicit state reset on browser startup, install, and update.
+- A pure state-machine module to make the transitions above easy to test.

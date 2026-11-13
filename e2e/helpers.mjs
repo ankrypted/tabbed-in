@@ -40,7 +40,9 @@ export function findBrowser() {
  * can't click.
  */
 export function prepareExtension({ grantHosts }) {
-  const src = path.join(ROOT, '.output', 'chrome-mv3');
+  // E2E_EXTENSION_DIR lets the tests run against any unpacked extension folder, e.g. the
+  // folder the installer produced, to prove that what friends get actually works.
+  const src = process.env.E2E_EXTENSION_DIR || path.join(ROOT, '.output', 'chrome-mv3');
   if (!fs.existsSync(path.join(src, 'manifest.json'))) {
     throw new Error('No build found. Run `npm run build` first (or use `npm run test:e2e`).');
   }

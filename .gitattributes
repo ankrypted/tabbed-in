@@ -1,0 +1,9 @@
+# Shell scripts must keep Unix line endings, or they fail on Linux and macOS.
+*.sh text eol=lf
+*.command text eol=lf
+# Batch files need Windows line endings.
+*.bat text eol=crlf
+# Release archives must never be touched by line-ending conversion.
+*.tar.gz binary
+*.zip binary
+*.png binary

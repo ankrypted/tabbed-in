@@ -1,5 +1,6 @@
-// Background script: timers, badges, the on-page widget, and the tab-switch lock.
-// Still to come: the Running/Paused/Expired state machine (see REQUIREMENTS.md).
+// Background script: timers, badges, the on-page widget, the tab-switch lock,
+// and the end-of-timer alert (bell + notification; the tab is never closed).
+// Still to come: pause/resume (see REQUIREMENTS.md).
 
 import { decideLockAction, recordRevert, shouldCloseNewTab, type Timers } from '../utils/lock';
 import { retry } from '../utils/retry';
@@ -56,6 +57,9 @@ const notifyWidget = (tabId: number, end: number | null) =>
 type StartResult = { ok: true } | { ok: false; error: string };
 
 async function startTimer(tabId: number, minutes: number): Promise<StartResult> {
+  if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440) {
+    return { ok: false, error: 'Enter a number of minutes between 1 and 1440.' };
+  }
   const timers = await getTimers();
 
   // Only one timer at a time (the lock needs a single timed tab). Forget
@@ -95,10 +99,74 @@ async function cancelTimer(tabId: number) {
   delete timers[tabId];
   await setTimers(timers);
   browser.alarms.clear(`tab-${tabId}`);
+  if (Object.keys(timers).length === 0) browser.alarms.clear('tick'); // nothing left to refresh
   try {
     await browser.action.setBadgeText({ tabId, text: '' });
   } catch {}
   await notifyWidget(tabId, null);
+}
+
+// --- end of timer ----------------------------------------------------------
+// When time is up the timer stops on its own, the lock is released, and the
+// user gets a bell and a notification. The tab is NEVER closed.
+
+/** Ring the bell. A service worker can't play audio, so use an offscreen page. */
+async function ringBell() {
+  try {
+    if (browser.offscreen?.createDocument) {
+      const open = await browser.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+      if (open.length === 0) {
+        await browser.offscreen.createDocument({
+          url: browser.runtime.getURL('/offscreen.html'),
+          reasons: ['AUDIO_PLAYBACK'],
+          justification: 'Play the bell when the timer ends',
+        });
+      }
+      // The page may not have registered its listener yet right after creation,
+      // so retry until a receiver exists.
+      await retry(
+        () => browser.runtime.sendMessage({ target: 'offscreen', type: 'play-bell' }),
+        30,
+        100,
+      );
+    } else if (typeof AudioContext !== 'undefined') {
+      // Browsers whose background page has audio (e.g. Firefox).
+      const { playBell } = await import('../utils/bell');
+      playBell(new AudioContext());
+    }
+  } catch (err) {
+    console.warn('[tabbed-in] could not ring the bell', err);
+  }
+}
+
+async function showDoneNotification(tabTitle: string) {
+  try {
+    await browser.notifications.create('tabbed-in-done', {
+      type: 'basic',
+      iconUrl: browser.runtime.getURL('/icon/128.png'),
+      title: "Time's up",
+      message: tabTitle
+        ? `Your timer on "${tabTitle}" has ended. The tab is still open.`
+        : 'Your timer has ended. The tab is still open.',
+      priority: 2,
+    });
+  } catch (err) {
+    console.warn('[tabbed-in] could not show the notification', err);
+  }
+}
+
+async function finishTimer(tabId: number) {
+  const t = (await getTimers())[tabId];
+  if (!t) return; // cancelled in the meantime
+  if (t.end > Date.now() + 2000) return; // a stale alarm from an earlier timer on this tab
+
+  let title = '';
+  try {
+    title = (await browser.tabs.get(tabId)).title ?? '';
+  } catch {}
+
+  await cancelTimer(tabId); // removes the timer (so the lock is gone), badge, and widget
+  await Promise.all([ringBell(), showDoneNotification(title)]);
 }
 
 // --- tab-switch lock -------------------------------------------------------
@@ -223,10 +291,16 @@ async function closeNewTabIfLocked(tab: {
 type Message =
   | { type: 'start'; tabId: number; minutes: number }
   | { type: 'cancel'; tabId: number }
-  | { type: 'widget-state' };
+  | { type: 'widget-state' }
+  | { type: 'bell-played'; state: string };
 
 export default defineBackground(() => {
   browser.runtime.onMessage.addListener((msg: Message, sender, respond) => {
+    if (msg.type === 'bell-played') {
+      // Reported by the hidden bell page, which has no storage access of its own.
+      browser.storage.session.set({ lastBell: { at: Date.now(), state: msg.state } });
+      return false;
+    }
     if (msg.type === 'widget-state') {
       // A freshly injected widget asks what to show for its own tab.
       const tabId = sender.tab?.id;
@@ -247,13 +321,7 @@ export default defineBackground(() => {
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === 'tick') return updateBadges();
     if (!alarm.name.startsWith('tab-')) return;
-    const tabId = +alarm.name.slice(4);
-    const timers = await getTimers();
-    delete timers[tabId];
-    await setTimers(timers);
-    try {
-      await browser.tabs.remove(tabId);
-    } catch {}
+    await finishTimer(+alarm.name.slice(4));
   });
 
   browser.tabs.onRemoved.addListener((tabId) => cancelTimer(tabId));

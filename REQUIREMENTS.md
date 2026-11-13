@@ -13,19 +13,19 @@
 
 ### Changes in v0.3
 3. **On-page timer widget.** The countdown stays visible on the page while the user browses. The widget can be dragged anywhere and minimized. It needs a content script, so site access is requested (as an optional permission) when the first timer starts.
-4. **Expiry prompt moves into the widget** (Close tab / Add time). A small popup window remains only as a fallback where the widget can't show.
+4. ~~**Expiry prompt moves into the widget** (Close tab / Add time).~~ **Superseded (2026-11-13):** when the timer ends it rings a bell and shows a notification, stops on its own, and the tab stays open. There is no prompt, no Expired state, and no auto-close.
 
 ## 2. Concept: Timer States
 
 ```
-            start                 time hits 0
-  (none) ───────────► RUNNING ───────────────► EXPIRED
-                       │  ▲                     │    │
-                 pause │  │ resume              │    │ "Add time"
-                       ▼  │                     │    └──► back to RUNNING
-                      PAUSED                    │
-                                                │ "Close tab"
-  RUNNING / PAUSED ──── stop (cancel phrase) ──►(none) ◄─┘  (tab closes, timer removed)
+            start               time hits 0: bell + notification
+  (none) ───────────► RUNNING ──────────────────────────────────► (none)
+                       │  ▲                                     (tab stays open)
+                 pause │  │ resume
+                       ▼  │
+                      PAUSED
+
+  RUNNING / PAUSED ──── stop (cancel phrase) ──► (none)
 ```
 
 | State | Tab switching | Countdown | Alarm |
@@ -33,20 +33,21 @@
 | **None** | Free | n/a | none |
 | **Running** | **Locked** to the timed tab | Counting | set for end time |
 | **Paused** | Free | Frozen (remaining time kept) | cleared |
-| **Expired** | **Locked** until the user answers the prompt | Stopped at 0 | fired |
+
+There is no "Expired" state: when the timer ends it simply goes back to **None**, with a bell and a notification, and the tab stays open. (Pause is not built yet.)
 
 ## 3. MVP Scope
 
 ### In the MVP
 - Start a timer on the active tab (presets + custom minutes).
 - Live countdown in the popup and a badge on the tab.
-- **Focus lock** while Running / Expired (same-window tab switching).
+- **Focus lock** while Running (same-window tab switching).
 - **Pause / Resume** (releases and re-applies the lock).
 - **Stop** via the cancel phrase "i am done".
-- **Expiry prompt** with "Close tab" and "Add time" actions.
+- **End of timer:** a bell and a notification; the timer stops on its own, the lock lifts, and the tab stays open.
 - Remove the timer if the tab is closed manually.
 - **Force-exit safeguards** (section 4.9): circuit breaker, safe mode, self-healing checks, watchdog, startup reset.
-- **On-page timer widget** (section 4.10): draggable, minimizable, position remembered, pause/resume, hosts the expiry prompt. Site access requested on first start.
+- **On-page timer widget** (section 4.10): draggable, minimizable, position remembered, pause/resume. Site access requested on first start.
 - Chromium browsers only (Chrome, Brave, Edge...).
 
 ### Deferred (post-MVP)
@@ -79,7 +80,7 @@ Priority: **MVP** = in the first release, **Later** = after the MVP.
 |---|---|---|
 | FR-11 | While the timer is **Running** or **Expired**, switching to a different tab in the same window is reverted: the timed tab is re-activated immediately. | MVP |
 | FR-12 | While Running, tabs the user opens (new-tab button, Ctrl+T, bookmarks) are closed automatically and focus returns to the timed tab. Tabs opened by a link or script on the timed page itself are kept in the background, so sites that open helper tabs keep working. (Decided 2026-11-13.) | MVP |
-| FR-13 | The lock is released when the timer is **Paused**, **Stopped**, or the expiry prompt is resolved. | MVP |
+| FR-13 | The lock is released when the timer is **Paused**, **Stopped**, or **ends**. | MVP |
 | FR-14 | Navigation **within** the timed tab (links, back/forward) is allowed. | MVP |
 | FR-15 | The user is told why they cannot switch (badge/notice in popup: "Pause or stop the timer to leave this tab"). | MVP |
 | FR-16 | Lock across multiple windows (focusing another browser window). | Later |
@@ -99,16 +100,21 @@ Priority: **MVP** = in the first release, **Later** = after the MVP.
 | FR-22 | Closing the timed tab manually removes its timer. | MVP |
 | FR-23 | Configurable phrase; paste disabled in the field. | Later |
 
-### 4.6 Expiry prompt
+### 4.6 End of timer (decided 2026-11-13)
+
+The tab is **never** closed by the extension when time is up. There is no prompt and no Expired state: the timer simply ends, with an alert.
+
 | ID | Requirement | Pri |
 |---|---|---|
-| FR-24 | When the timer reaches zero, the tab is **not** closed. The state becomes Expired and a prompt is shown to the user. | MVP |
-| FR-25 | The prompt offers **Close tab** (closes the timed tab, removes the timer and lock) and **Add time** (extends by a chosen amount and returns to Running). | MVP |
-| FR-26 | "Add time" offers quick options (e.g. +5, +10, +15 min) and a custom value, validated like FR-3. | MVP |
-| FR-27 | The prompt is shown in the on-page widget (FR-54). Where the widget can't show (restricted page, site access denied), it is delivered as a small extension-owned popup window and brought to the front when the timer expires. | MVP |
-| FR-28 | If the prompt window is dismissed without an answer, the timer stays Expired and the lock remains. Clicking the toolbar icon reopens the same choices. | MVP |
-| FR-29 | If the browser was asleep or closed past the end time, the Expired prompt is shown on wake/startup (where feasible). | Later |
-| FR-30 | ~~In-page overlay instead of a popup window.~~ Superseded: now part of the MVP via FR-47 to FR-55. | n/a |
+| FR-24 | When the timer reaches zero, the tab is **not** closed. The timer stops on its own and is removed, which also releases the tab lock. | MVP |
+| FR-25 | The user is alerted with a **bell** (a synthesised sound, played through an offscreen page because a service worker has no audio) and a **browser notification** ("Time's up ... The tab is still open."). | MVP |
+| FR-26 | The on-page widget and the badge disappear when the timer ends. | MVP |
+| FR-27 | A timer that was stopped early does not ring or notify. | MVP |
+| FR-28 | The repeating badge alarm is cleared once no timer remains. | MVP |
+| FR-29 | If the browser was asleep or closed past the end time, the alert is shown on wake/startup (where feasible). | Later |
+| FR-30 | Option to turn the bell or notification off, choose the sound, or add "snooze / add time". | Later |
+
+(An earlier design had an Expired state with a "Close tab / Add time" prompt. It was dropped on 2026-11-13 in favor of the bell and notification above.)
 
 ### 4.7 State and persistence
 | ID | Requirement | Pri |
@@ -133,8 +139,8 @@ The lock must never trap the user. Layers, from user-initiated to automatic:
 | FR-37 | **Circuit breaker:** if the lock reverts more than 5 tab switches within 3 seconds, assume a loop or conflict. Release the lock, set the timer to Paused, and show a notice in the popup and badge. | MVP |
 | FR-38 | **Safe mode on error:** any exception in lock enforcement or state loading releases the lock and logs the error. It must never leave the lock held. | MVP |
 | FR-39 | **Self-healing check:** on every enforcement event, validate the timer record (tab exists, state is valid, end time is sane). If invalid, delete the record and release the lock. | MVP |
-| FR-40 | **Expired-prompt timeout:** if an Expired prompt stays unanswered for 30 minutes, release the lock but keep the timer in Expired state with the tab open. The user is no longer trapped; the next toolbar click shows the prompt again. | MVP |
-| FR-41 | **Hard cap:** the lock never holds longer than the maximum timer length (1440 min) plus extensions, enforced by a separate watchdog alarm that is independent of the timer's own alarm. | MVP |
+| FR-40 | ~~Expired-prompt timeout.~~ Not needed: there is no prompt, and the lock lifts when the timer ends (FR-24). | n/a |
+| FR-41 | **Hard cap:** the lock never holds longer than the maximum timer length (1440 min), even if the timer's own alarm is lost. Today a record whose end time passed more than a minute ago is treated as stale and releases the lock when the user next switches tabs. A separate watchdog alarm is still to do. | MVP |
 | FR-42 | **Startup / install / update reset:** on `onStartup`, `onInstalled`, and extension update, all timer state is cleared and every lock released. | MVP |
 | FR-43 | **Unavoidable exits are documented** in the README and in the popup help text: close the tab or window, or disable the extension at `chrome://extensions` / `brave://extensions`. | MVP |
 | FR-44 | The lock never blocks navigation **within** the timed tab, so the user can open `brave://extensions` in that tab to disable the extension. | MVP |
@@ -154,7 +160,7 @@ A floating widget on the timed page keeps the countdown in view while the user b
 | FR-51 | The widget re-appears after page reloads and in-tab navigations. It is shown in the top frame only, never in iframes. | MVP |
 | FR-52 | The widget is isolated from the page: rendered in a Shadow DOM, immune to site CSS, high z-index, and does not shift the page layout. It reads no page content. | MVP |
 | FR-53 | Site access is requested as an **optional host permission** when the user first clicks Start (a user gesture). If the user denies it, the timer still works with the badge and popup, the popup explains why there is no widget, and the lock still applies. | MVP |
-| FR-54 | On expiry, the widget expands into the prompt: **Close tab** or **Add time** (see FR-25, FR-26). | MVP |
+| FR-54 | ~~On expiry, the widget expands into a prompt.~~ Superseded: the widget disappears when the timer ends (FR-26). | n/a |
 | FR-55 | The widget is removed when the timer is stopped or finished, or the tab closes. | MVP |
 | FR-56 | The widget counts down locally from the stored end time (no per-second messaging) and updates through `storage.onChanged`. | MVP |
 | FR-57 | Widget size options, opacity, snap-to-corner, hide-until-next-pause, and a keyboard shortcut to minimize. | Later |
@@ -180,15 +186,15 @@ Not supported (falls back to badge and popup): `chrome://` pages, the Chrome Web
 
 ### 5.3 Security and Privacy
 - **NFR-S1:** No network requests, telemetry, or remote code.
-- **NFR-S2:** Minimum permissions. Required: `alarms`, `storage`, `scripting`, and `tabs` (keep `tabs` only if the lock needs it; otherwise try `activeTab`). **Host access is optional** (`optional_host_permissions`: `<all_urls>`) and requested on first timer start (FR-53), not at install. The install prompt must not mention access to all websites.
+- **NFR-S2:** Minimum permissions. Required: `alarms`, `storage`, `scripting`, `notifications` (end-of-timer notification), `offscreen` (a hidden page to play the bell), and `tabs` (keep `tabs` only if the lock needs it; otherwise try `activeTab`). **Host access is optional** (`optional_host_permissions`: `<all_urls>`) and requested on first timer start (FR-53), not at install. The install prompt must not mention access to all websites.
 - **NFR-S3:** Only the tab ID, window ID, and title/URL needed for display are held, in session storage only. The widget's position and minimized state are the only data in `storage.local`. The injected script reads nothing from the page.
 - **NFR-S4:** No inline scripts and no `eval`.
 
 ### 5.4 Usability and Accessibility
 - **NFR-U1:** Starting a timer takes <= 2 clicks.
-- **NFR-U2:** The popup and the expiry prompt are fully keyboard operable, with visible focus and labelled controls.
+- **NFR-U2:** The popup is fully keyboard operable, with visible focus and labelled controls.
 - **NFR-U3:** State is never conveyed by color alone (the badge text changes too).
-- **NFR-U4:** The expiry prompt has a clear primary action and cannot be mistaken for a notification that can be ignored. Wording makes clear that the tab will **not** close until the user chooses.
+- **NFR-U4:** The end-of-timer alert must be noticeable even if system notifications are muted (hence the bell as well as the notification), and its wording must say the tab is still open.
 - **NFR-U5:** The lock must be explained, not silent. A user blocked from switching tabs should be able to find out why and how to release it.
 
 ### 5.5 Compatibility
@@ -200,7 +206,7 @@ Not supported (falls back to badge and popup): `chrome://` pages, the Chrome Web
 - **NFR-M1:** Stack is WXT + TypeScript + Vitest (Node >= 20.19). WXT generates per-browser manifests (MV3 everywhere); the extension loads unpacked from `.output/<browser>-mv3`. No runtime dependencies.
 - **NFR-M2:** The timer state machine is a pure function module (no `chrome.*` calls) so it can be unit tested.
 - **NFR-Q1:** Unit tests for all state transitions and time math (start, pause, resume, expire, extend, stop).
-- **NFR-Q2:** A manual test checklist: start, lock reverts tab switch, new tab, pause then switch, resume, stop phrase, expiry prompt (close / add time / dismiss), manual tab close, multiple windows, restricted pages.
+- **NFR-Q2:** A manual test checklist: start, lock reverts tab switch, new tab, pause then switch, resume, stop phrase, timer end (bell, notification, tab stays open), manual tab close, multiple windows, restricted pages.
 - **NFR-Q3:** Escape-hatch tests, which must pass before any release:
   - Corrupt the stored timer record by hand; the lock must release.
   - Delete the timed tab while Running; no lock remains.
@@ -229,7 +235,7 @@ Changes this proposal requires:
 1. **State machine module** with unit tests (states, transitions, remaining-time math).
 2. **Background:** alarms, lock enforcement, expiry to the Expired state, cleanup on tab close, fail-open guards.
 3. **Popup:** start form with validation, running view (pause / stop phrase), paused view (resume), expired view.
-4. **On-page widget:** content script with Shadow DOM, drag, minimize, remembered position, pause/resume, and the expiry prompt (Close tab / Add time). Optional site-access request in the Start flow. Fallback prompt window for restricted pages.
+4. **On-page widget:** content script with Shadow DOM, drag, minimize, remembered position, pause/resume. Optional site-access request in the Start flow.
 5. **Manual test pass** on Chrome and Brave using the checklist in NFR-Q2.
 6. **Package:** icons, README, zip.
 
@@ -239,8 +245,8 @@ Changes this proposal requires:
 2. **New tabs while locked (FR-12):** when the user opens a new tab, should the extension close it, or leave it open in the background and snap back to the timed tab?
 3. **Other windows:** if the user focuses a different browser window, is that a lock violation? The MVP ignores it. Is that acceptable?
 4. **Stop vs. pause UI:** as drafted, Pause is one click and Stop needs the phrase. Is that the intended split?
-5. ~~**Expiry prompt style**~~ Resolved: the prompt lives in the on-page widget, with a popup window as fallback.
+5. ~~**Expiry prompt style**~~ Resolved: no prompt. The timer ends on its own with a bell and a notification, and the tab stays open.
 5a. **Widget defaults:** starting corner (e.g. top-right), size, and whether the minimized pill is the default state after the first minute.
 5b. **Denied site access:** if the user declines the permission, is the timer still allowed to start (as drafted), or should the widget be required?
-6. **Extend defaults:** which "Add time" quick options (e.g. +5 / +10 / +15)?
+6. ~~**Extend defaults**~~ Not applicable: there is no "Add time".
 7. **Emergency exit:** should there be a way out if the lock misbehaves, such as disabling the extension? Browsers always allow this, but should the README say so?

@@ -15,6 +15,14 @@ A browser window opens and closes by itself for each file. Don't click around wh
 
 On Windows, run these under Node 22 (see the main README); for example `fnm exec --using=22 cmd /c "npm run test:e2e"`.
 
+## Test a different build
+
+Set `E2E_EXTENSION_DIR` to any unpacked extension folder to run the tests against it instead of `.output/chrome-mv3`: for example the folder the installer produced, to prove what friends get really works.
+
+```powershell
+$env:E2E_EXTENSION_DIR = "C:\path\to\unzipped\extension"; node e2e/lock.e2e.mjs
+```
+
 ## Which browser
 
 Set `BROWSER_PATH` to a Brave or Chromium executable. If it's unset, the helper looks for Brave in the usual places on Windows, macOS, and Linux.
@@ -30,6 +38,7 @@ Set `BROWSER_PATH` to a Brave or Chromium executable. If it's unset, the helper 
 | `widget.e2e.mjs` | 8 | Widget appears, default position, drag, clamps to the viewport, remembers position across reload, removes itself on stop, no console errors |
 | `lock.e2e.mjs` | 20 | Switch-back, explanatory note, new-tab-page tabs closed, link-opened tabs kept, in-tab navigation, one timer at a time, stop, circuit breaker, corrupt record, closing the timed tab |
 | `drag-error.e2e.mjs` | 5 | Regression test for the "user may be dragging a tab" bug: retries, no self-release, stopping mid-retry |
+| `expiry.e2e.mjs` | 14 | When time is up: the tab is **not** closed, the timer stops on its own, the lock lifts, the widget goes away, a notification is shown, and the bell page is created and its audio engine runs. A timer stopped early does not ring |
 
 ## How it works
 
@@ -43,8 +52,9 @@ Set `BROWSER_PATH` to a Brave or Chromium executable. If it's unset, the helper 
 
 - The real site-access dialog and the Deny path.
 - Real mouse clicks on the browser's tab strip, the real + button, and Ctrl+T (the browser UI is outside what automation can drive).
+- Hearing the bell and seeing the system notification (the tests only check that the bell page ran and a notification was created).
 - Firefox and Chrome itself.
-- The pause/resume and expiry prompt (not built yet).
+- Pause/resume (not built yet).
 
 ## Adding a test
 

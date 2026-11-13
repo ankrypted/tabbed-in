@@ -6,7 +6,7 @@ Minimum functional requirements for **Tabbed In**, with live status. Full detail
 
 "Done" means built and, where noted, verified. The popup Start flow and the widget were verified end to end in Brave by an automated test (see log.md L-25). Items 1, 4, 8, and 11 come from the original baseline code; items 1 and the timer display in 4 were also confirmed by that test.
 
-**Progress: 8 done · 6 partial · 4 not started (of 18)**
+**Progress: 10 done · 6 partial · 2 not started (of 18)**
 
 ## Timer
 | # | Requirement | Status | Notes |
@@ -31,8 +31,8 @@ Minimum functional requirements for **Tabbed In**, with live status. Full detail
 ## Expiry
 | # | Requirement | Status | Notes |
 |---|---|---|---|
-| 9 | At zero the tab does not close; user is prompted to close it or add time (in the widget, popup window as fallback) | ⬜ | Currently auto-closes, the opposite of the goal |
-| 10 | The lock stays on until the prompt is answered | ⬜ | |
+| 9 | At zero the tab does **not** close; the timer stops on its own and the user gets a bell and a notification | ✅ | Decided 2026-11-13 (replaces the "close or add time" prompt). Verified in Brave: tab stays open, notification shown, bell page created and its audio engine running. The actual sound can't be heard from automation, so please confirm by ear |
+| 10 | The lock lifts when the timer ends | ✅ | Verified: after the timer ends, switching tabs and opening new tabs work again |
 
 ## On-screen timer widget
 | # | Requirement | Status | Notes |
@@ -46,7 +46,7 @@ Minimum functional requirements for **Tabbed In**, with live status. Full detail
 | # | Requirement | Status | Notes |
 |---|---|---|---|
 | 11 | Closing the timed tab removes its timer | ✅ | Baseline code |
-| 12 | The lock can never trap the user (corrupt or missing record, vanished tab, error, tab-switch loop all release it) | 🟡 | Built and verified: circuit breaker, corrupt-record release, vanished tab, safe mode. Pending: expired-prompt timeout, watchdog alarm, startup reset (REQUIREMENTS.md 4.9) |
+| 12 | The lock can never trap the user (corrupt or missing record, vanished tab, error, tab-switch loop all release it) | 🟡 | Built and verified: circuit breaker, corrupt-record release, vanished tab, safe mode. Pending: watchdog alarm, startup reset (REQUIREMENTS.md 4.9). The expired-prompt timeout is no longer needed |
 | 13 | No timers kept across a browser restart; all state cleared on startup | 🟡 | Session storage clears on restart, but no explicit startup reset and not verified |
 | 14 | Works in Chromium browsers (Chrome, Brave) | 🟡 | Runs in Brave (automated test passes). Not yet tried in Chrome: Chrome 156 can't load unpacked from the command line, so it needs a manual Load unpacked |
 
@@ -59,13 +59,18 @@ Minimum functional requirements for **Tabbed In**, with live status. Full detail
 | State machine module with unit tests | ⬜ |
 | Background rewrite (lock, expiry state, serialized storage writes) | ⬜ |
 | Popup rewrite (pause/resume, validation, expired view) | ⬜ |
-| On-page widget (content script, Shadow DOM, drag, minimize, expiry prompt) | 🟡 drag + remembered position built; minimize, pause/resume, expiry prompt pending |
-| Unit tests (position clamping, time formatting, lock decisions, circuit breaker) | ✅ 55 tests passing |
-| Browser tests in the repo (`npm run test:e2e`, `e2e/`) | ✅ 41 checks, 5 files, all passing |
+| On-page widget (content script, Shadow DOM, drag, minimize) | 🟡 drag + remembered position built; minimize and pause/resume pending |
+| End-of-timer alert (bell via offscreen page + notification, tab stays open) | ✅ 14 browser checks |
+| Unit tests (position clamping, time formatting, lock decisions, circuit breaker, retry, bell) | ✅ 60 tests passing |
+| Browser tests in the repo (`npm run test:e2e`, `e2e/`) | ✅ 55 checks, 6 files, all passing |
 | Tab-switch lock with safety nets | ✅ verified in Brave (20/20 checks, plus 5/5 for the click-during-mouse-down failure). Real mouse clicks on the tab strip can't be automated, so please confirm by hand |
-| Fallback prompt window for restricted pages | ⬜ |
+| ~~Fallback prompt window for restricted pages~~ | ➖ not needed (no prompt) |
 | Manual test pass (NFR-Q2) and escape-hatch tests (NFR-Q3) | ⬜ |
-| Real icons | ⬜ |
+| Windows installer for friends (`npm run bundle:windows`): unzip, replace old files, detect other copies, open the Extensions page, print exact steps | ✅ 32 script checks (incl. `install.bat` itself and the no-extra-arguments launch that crashed once) + a cold-start real-window test + a real run against the live Brave (Extensions page opened and focused) + the installed folder passes 47 browser checks. Only the final "Load unpacked" click is left to a person |
+| Extension folder archives in the repo (`releases/`, `npm run release:extension`) | ✅ tar.gz + zip, verified identical to the build; direct download links in README |
+| CI: installer tests on macOS / Linux / Windows (`.github/workflows/installer-tests.yml`) | ⬜ written but not pushed (needs `gh auth refresh -s workflow`); never run |
+| Linux + macOS installer (`npm run bundle:unix`) | 🟡 32 checks under Git Bash with fake profiles; never run on real Linux/macOS (AppleScript, clipboard, Finder steps untested) |
+| Icons | 🟡 generated placeholder clock icon (`node scripts/make-icons.mjs`); replace with real artwork before a store listing |
 | License | ⬜ |
 
 ## Open decisions
