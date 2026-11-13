@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { width: 260px; font: 14px system-ui, sans-serif; padding: 12px; }
+    h3 { margin: 0 0 4px; font-size: 14px; }
+    #title { color: #666; font-size: 12px; margin-bottom: 10px;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row { display: flex; gap: 6px; margin-bottom: 8px; }
+    button { flex: 1; padding: 6px; cursor: pointer; }
+    input { width: 100%; box-sizing: border-box; padding: 6px; }
+    #remaining { font-size: 24px; margin: 6px 0; }
+    .hidden { display: none; }
+    small { color: #888; }
+  </style>
+</head>
+<body>
+  <h3>Tabbed In</h3>
+  <div id="title"></div>
+
+  <div id="setup">
+    <div class="row">
+      <button data-m="5">5m</button>
+      <button data-m="15">15m</button>
+      <button data-m="30">30m</button>
+      <button data-m="60">60m</button>
+    </div>
+    <div class="row">
+      <input id="custom" type="number" min="1" placeholder="Custom minutes">
+      <button id="go" style="flex:0 0 60px">Start</button>
+    </div>
+    <small>This tab will close when time runs out.</small>
+  </div>
+
+  <div id="running" class="hidden">
+    <div id="remaining"></div>
+    <small>To cancel early, type: <b>I am done</b></small>
+    <input id="phrase" placeholder="Type the phrase to cancel">
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
