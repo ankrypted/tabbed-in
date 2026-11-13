@@ -69,6 +69,48 @@ User clicks "15m" in popup
     └─► render()   (reads storage.session, switches to the running view)
 ```
 
+### Flow 1b: the widget appears (added with the on-page timer)
+
+```
+popup/main.ts   start(15)  (inside the click handler)
+  1. permissions.request({ origins: ['<all_urls>'] })   ← must happen in the click gesture;
+                                                           browser shows its dialog once
+  2. sendMessage({ type:'start', ... })  ──► background startTimer()
+       └─► injectWidget(tabId)   scripting.executeScript('/content-scripts/widget.js')
+             ├─ permission granted ─► widget runs:
+             │     sendMessage({ type:'widget-state' }) ─► background replies with { end }
+             │     widget mounts, counts down, becomes draggable
+             └─ not granted yet ──► silently fails (timer still runs, badge only)
+
+User accepts the permission dialog
+  background   permissions.onAdded ──► injectWidget() for every timed tab   (works even if
+                                                                              the popup closed)
+Page navigates / reloads
+  background   tabs.onUpdated(status='complete') ──► injectWidget(tabId)    (the old widget
+                                                                              died with the page)
+Timer cancelled
+  background   cancelTimer ──► tabs.sendMessage({ type:'timer-changed', end:null })
+  widget       removes itself
+```
+
+### Flow 1c: the user tries to leave the timed tab
+
+```
+User opens a new tab or clicks another tab (same window as the timed tab)
+  browser      tabs.onActivated { tabId: other, windowId }
+  background   enforceLock
+    1. getTimers(); decideLockAction(timers, activation, now)
+    2a. ignore  ─► nothing happens (other window, no timer, lock released)
+    2b. release ─► timers[timedTab].lockOff = true; widget says "Tab lock released."
+    2c. revert  ─► tabs.get(timedTab)            gone? ─► cancelTimer (drop timer and lock)
+                   recordRevert(...)             more than 5 in 3 s? ─► releaseLock (breaker)
+                   tabs.update(timedTab, { active: true })
+                      └─► tabs.onActivated { tabId: timedTab } ─► ignore (no loop)
+                   tabs.sendMessage(timedTab, { type: 'lock-blocked' })
+  widget       shows "Locked in. Stop the timer to switch tabs." for 3.5 s
+Any exception in enforceLock ─► every timer gets lockOff = true (safe mode)
+```
+
 ### Flow 2: every 30 seconds (badge refresh)
 
 ```
@@ -149,6 +191,34 @@ The engine. WXT builds it into a service worker (Chrome/Brave/Edge) or a backgro
 
 All listeners are registered inside `defineBackground(...)`, so they exist every time the worker wakes up.
 
+### [entrypoints/widget.content/index.ts](entrypoints/widget.content/index.ts)
+The on-page timer. It is a content script with `registration: 'runtime'`, so it is **not** in the manifest. The background injects it with `scripting.executeScript` into the timed tab only.
+- On load it asks the background `{ type: 'widget-state' }` for its own tab's timer. No timer means it exits.
+- Renders a small card inside a **Shadow DOM** (via WXT's `createShadowRootUi`) so site CSS can't affect it. Its CSS is inlined into the script (`?inline`), so no web-accessible resource is needed.
+- Counts down locally from the stored end time (one-second interval).
+- **Drag:** pointer events with pointer capture. Position is clamped to the viewport, re-clamped on window resize, and saved to `storage.local` (`widgetPos`) when a drag ends.
+- Listens for `{ type: 'timer-changed', end }` from the background: updates the end time, or removes itself when `end` is `null`.
+- Skips iframes and refuses to mount twice (it checks for an existing `<tabbed-in-widget>`).
+
+### [entrypoints/widget.content/style.css](entrypoints/widget.content/style.css)
+The widget's styles: fixed position, maximum z-index, dark card, grab/grabbing cursor, `user-select: none`, `touch-action: none` (needed for pointer-event dragging).
+
+### The tab-switch lock (in [background.ts](entrypoints/background.ts))
+- `startTimer` now records the timed tab's `windowId` with the end time, and refuses to start if any timer already exists (it first drops records whose tab is gone).
+- `tabs.onActivated` calls `enforceLock`, which loads the timers and asks `decideLockAction` (in `utils/lock.ts`) what to do:
+  - **ignore:** no timer, a different window, the timed tab itself (this prevents a revert loop), or a released lock.
+  - **revert:** `tabs.update(timedTabId, { active: true })`, then tell the widget to show "Locked in...".
+  - **release:** a corrupt or stale record sets `lockOff` on the timer. The timer keeps running, but the lock is gone.
+- **Safety nets:** a vanished timed tab drops the timer; more than 5 reverts in 3 s trips the circuit breaker (`recordRevert`) and releases the lock; any exception releases every lock ("safe mode").
+
+### [utils/lock.ts](utils/lock.ts)
+Pure functions, no browser APIs, 15 unit tests ([lock.test.ts](utils/lock.test.ts)): `decideLockAction` (ignore / revert / release, failing open on anything doubtful) and `recordRevert` (the circuit breaker). Also defines the `TimerRecord` and `Timers` types shared with the popup.
+
+### [utils/position.ts](utils/position.ts) and [utils/time.ts](utils/time.ts)
+Pure functions with no browser APIs, covered by Vitest ([position.test.ts](utils/position.test.ts), [time.test.ts](utils/time.test.ts)):
+- `clampPosition`, `defaultPosition` (top-right), `isPos` (validates saved data).
+- `formatRemaining` (`m:ss`, or `h:mm:ss` from one hour). Used by both the popup and the widget.
+
 ### [entrypoints/popup/index.html](entrypoints/popup/index.html)
 The popup's markup, shown when the toolbar icon is clicked. WXT detects it as the toolbar popup.
 - `#setup`: preset buttons (`data-m` = minutes), the custom-minutes input, and the Start button.
@@ -199,4 +269,9 @@ Ignores `node_modules/`, `.output/` (build output), and `.wxt/` (generated types
 - `node_modules/`: dependencies.
 
 ## Planned additions
-Per the MVP build plan: a pure state-machine module with Vitest tests, focus-lock handlers in `background.ts` (`tabs.onActivated`, `tabs.onCreated`), a pause/resume UI in the popup, and an expiry-prompt page for the Close tab / Add time choice.
+Per the MVP build plan:
+- A pure state-machine module with Vitest tests.
+- Focus-lock handlers in `background.ts` (`tabs.onActivated`, `tabs.onCreated`).
+- A pause/resume UI in the popup.
+- **On-page widget, remaining parts:** the drag and remembered position are built (see above). Still to add: minimize to a pill, the Running/Paused/Expired state display, pause/resume controls, and the expiry prompt (Close tab / Add time). The widget currently receives its state through messages from the background rather than reading `storage.session` directly.
+- A small fallback page for the expiry prompt on pages where the widget can't show.

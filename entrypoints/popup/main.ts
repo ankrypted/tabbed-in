@@ -1,4 +1,5 @@
-// Baseline port of the v1.0 popup. Behaviour is unchanged for now.
+import type { Timers } from '../../utils/lock';
+import { formatRemaining } from '../../utils/time';
 
 const PHRASE = 'i am done';
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
@@ -12,7 +13,15 @@ async function main() {
 
   const start = async (minutes: number) => {
     if (!(minutes > 0)) return;
+    // Ask for site access first, in the same click (a user gesture is required),
+    // so the on-page widget can be shown. If the user declines, the timer still
+    // runs with the badge and this popup. The background also shows the widget
+    // as soon as the permission is granted, even if this popup has closed.
+    const access = browser.permissions
+      .request({ origins: ['<all_urls>'] })
+      .catch(() => false);
     await browser.runtime.sendMessage({ type: 'start', tabId, minutes });
+    await access;
     render();
   };
 
@@ -32,13 +41,17 @@ async function main() {
 
   async function render() {
     const r = await browser.storage.session.get('timers');
-    const t = ((r.timers ?? {}) as Record<string, { end: number }>)[tabId];
-    $('setup').classList.toggle('hidden', !!t);
+    const timers = (r.timers ?? {}) as Timers;
+    const t = timers[tabId];
+    const timerElsewhere = !t && Object.keys(timers).length > 0;
+    $('setup').classList.toggle('hidden', !!t || timerElsewhere);
+    $('blocked').classList.toggle('hidden', !timerElsewhere);
     $('running').classList.toggle('hidden', !t);
     if (t) {
-      const s = Math.max(0, Math.round((t.end - Date.now()) / 1000));
-      $('remaining').textContent =
-        `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} left`;
+      $('remaining').textContent = `${formatRemaining(t.end - Date.now())} left`;
+      $('lockinfo').querySelector('small')!.textContent = t.lockOff
+        ? 'Tab lock is off for this timer.'
+        : 'Tabs are locked while this timer runs.';
     }
   }
 

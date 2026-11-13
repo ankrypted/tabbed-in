@@ -1,8 +1,7 @@
-// Baseline port of the v1.0 background script. Behaviour is unchanged for now;
-// it is replaced by the state-machine-driven version (see REQUIREMENTS.md).
+// Background script: timers, badges, the on-page widget, and the tab-switch lock.
+// Still to come: the Running/Paused/Expired state machine (see REQUIREMENTS.md).
 
-type Timer = { end: number };
-type Timers = Record<string, Timer>;
+import { decideLockAction, recordRevert, type Timers } from '../utils/lock';
 
 const KEY = 'timers';
 
@@ -31,14 +30,63 @@ async function updateBadges() {
   if (changed) await setTimers(timers);
 }
 
-async function startTimer(tabId: number, minutes: number) {
+// --- on-page widget -------------------------------------------------------
+// Injected only into timed tabs, and only works once the user has granted the
+// optional site-access permission (requested from the popup on Start).
+
+async function injectWidget(tabId: number) {
+  try {
+    await browser.scripting.executeScript({
+      target: { tabId },
+      files: ['/content-scripts/widget.js'],
+    });
+  } catch {} // no site access yet, restricted page, or tab gone
+}
+
+async function sendToTab(tabId: number, message: unknown) {
+  try {
+    await browser.tabs.sendMessage(tabId, message);
+  } catch {} // no widget on this tab
+}
+
+const notifyWidget = (tabId: number, end: number | null) =>
+  sendToTab(tabId, { type: 'timer-changed', end });
+
+type StartResult = { ok: true } | { ok: false; error: string };
+
+async function startTimer(tabId: number, minutes: number): Promise<StartResult> {
   const timers = await getTimers();
+
+  // Only one timer at a time (the lock needs a single timed tab). Forget
+  // timers whose tab no longer exists so a dead record can't block a new one.
+  for (const id of Object.keys(timers)) {
+    try {
+      await browser.tabs.get(+id);
+    } catch {
+      delete timers[id];
+    }
+  }
+  if (Object.keys(timers).length > 0) {
+    await setTimers(timers);
+    return { ok: false, error: 'A timer is already running. Stop it first.' };
+  }
+
+  let windowId: number;
+  try {
+    windowId = (await browser.tabs.get(tabId)).windowId;
+  } catch {
+    return { ok: false, error: 'That tab is no longer available.' };
+  }
+
   const end = Date.now() + minutes * 60000;
-  timers[tabId] = { end };
+  timers[tabId] = { end, windowId };
   await setTimers(timers);
   browser.alarms.create(`tab-${tabId}`, { when: end });
   browser.alarms.create('tick', { periodInMinutes: 0.5 });
   await updateBadges();
+  await injectWidget(tabId);
+  await notifyWidget(tabId, end);
+  return { ok: true };
 }
 
 async function cancelTimer(tabId: number) {
@@ -49,21 +97,90 @@ async function cancelTimer(tabId: number) {
   try {
     await browser.action.setBadgeText({ tabId, text: '' });
   } catch {}
+  await notifyWidget(tabId, null);
+}
+
+// --- tab-switch lock -------------------------------------------------------
+// While a timer runs, activating another tab in the timed tab's window snaps
+// back to the timed tab. Fails open: any doubt, error, or revert loop releases
+// the lock (the timer keeps running) instead of trapping the user.
+
+let recentReverts: number[] = [];
+
+/** Release the lock for one timer but keep it running. */
+async function releaseLock(tabId: number, reason: string) {
+  console.warn(`[tabbed-in] lock released: ${reason}`);
+  const timers = await getTimers();
+  if (timers[tabId]) {
+    timers[tabId].lockOff = true;
+    await setTimers(timers);
+  }
+  await sendToTab(tabId, { type: 'lock-released', reason });
+}
+
+async function enforceLock(activation: { tabId: number; windowId: number }) {
+  try {
+    const timers = await getTimers();
+    const decision = decideLockAction(timers, activation, Date.now());
+    if (decision.action === 'ignore') return;
+
+    if (decision.action === 'release') {
+      await releaseLock(decision.timerTabId, decision.reason);
+      return;
+    }
+
+    // decision.action === 'revert'
+    const timedTabId = decision.timerTabId;
+    try {
+      await browser.tabs.get(timedTabId);
+    } catch {
+      await cancelTimer(timedTabId); // timed tab is gone: drop the timer and the lock
+      return;
+    }
+
+    const { history, trip } = recordRevert(recentReverts, Date.now());
+    recentReverts = history;
+    if (trip) {
+      recentReverts = [];
+      await releaseLock(timedTabId, 'too many tab switches in a row (possible conflict)');
+      return;
+    }
+
+    await browser.tabs.update(timedTabId, { active: true });
+    await sendToTab(timedTabId, { type: 'lock-blocked' });
+  } catch (err) {
+    // Safe mode: never leave the lock held after an error.
+    console.error('[tabbed-in] lock error, releasing all locks', err);
+    try {
+      const timers = await getTimers();
+      for (const t of Object.values(timers)) t.lockOff = true;
+      await setTimers(timers);
+    } catch {}
+  }
 }
 
 type Message =
   | { type: 'start'; tabId: number; minutes: number }
-  | { type: 'cancel'; tabId: number };
+  | { type: 'cancel'; tabId: number }
+  | { type: 'widget-state' };
 
 export default defineBackground(() => {
-  browser.runtime.onMessage.addListener((msg: Message, _sender, respond) => {
-    const run =
+  browser.runtime.onMessage.addListener((msg: Message, sender, respond) => {
+    if (msg.type === 'widget-state') {
+      // A freshly injected widget asks what to show for its own tab.
+      const tabId = sender.tab?.id;
+      getTimers().then((t) => respond(tabId === undefined ? null : (t[tabId] ?? null)));
+      return true;
+    }
+    const run: Promise<StartResult> | null =
       msg.type === 'start' ? startTimer(msg.tabId, msg.minutes)
-      : msg.type === 'cancel' ? cancelTimer(msg.tabId)
+      : msg.type === 'cancel' ? cancelTimer(msg.tabId).then((): StartResult => ({ ok: true }))
       : null;
-    if (run) run.then(() => respond({ ok: true }));
+    if (run) run.then(respond);
     return !!run; // keep channel open for async response
   });
+
+  browser.tabs.onActivated.addListener((info) => enforceLock(info));
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === 'tick') return updateBadges();
@@ -79,8 +196,16 @@ export default defineBackground(() => {
 
   browser.tabs.onRemoved.addListener((tabId) => cancelTimer(tabId));
 
-  // Per-tab badges reset on navigation, so reapply.
-  browser.tabs.onUpdated.addListener((_id, info) => {
+  // Per-tab badges reset on navigation, so reapply. The widget lives in the
+  // page, so it is gone after a navigation and must be injected again.
+  browser.tabs.onUpdated.addListener(async (id, info) => {
     if (info.status === 'loading') updateBadges();
+    if (info.status === 'complete' && (await getTimers())[id]) injectWidget(id);
+  });
+
+  // The user just granted site access (popup Start): show widgets that were
+  // waiting for it.
+  browser.permissions.onAdded.addListener(async () => {
+    for (const id of Object.keys(await getTimers())) injectWidget(+id);
   });
 });

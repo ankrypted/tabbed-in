@@ -21,12 +21,17 @@
       <input id="custom" type="number" min="1" placeholder="Custom minutes">
       <button id="go" style="flex:0 0 60px">Start</button>
     </div>
-    <small>This tab will close when time runs out.</small>
+    <small>You'll be locked to this tab until the timer ends or you stop it. The tab closes when time runs out.</small>
+  </div>
+
+  <div id="blocked" class="hidden">
+    <small>A timer is already running in another tab. Go to that tab and stop it before starting a new one.</small>
   </div>
 
   <div id="running" class="hidden">
     <div id="remaining"></div>
-    <small>To cancel early, type: <b>I am done</b></small>
+    <div id="lockinfo"><small></small></div>
+    <small>To stop early, type: <b>I am done</b></small>
     <input id="phrase" placeholder="Type the phrase to cancel">
   </div>
 
