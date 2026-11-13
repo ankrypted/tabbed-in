@@ -2,7 +2,7 @@
 
 A browser extension that locks you to one tab for a set time. See [REQUIREMENTS.md](REQUIREMENTS.md).
 
-Status: pre-MVP. The code is a baseline port of the original tab timer; the state machine and focus lock are next.
+Status: pre-MVP. The code is a baseline port of the original tab timer; the state machine and focus lock are next. Live progress is in [MVP_CHECKLIST.md](MVP_CHECKLIST.md).
 
 ## Tech stack
 
