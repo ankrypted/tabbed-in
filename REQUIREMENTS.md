@@ -166,12 +166,12 @@ The lock must never trap the user. Layers, from user-initiated to automatic:
 - **NFR-U5:** The lock must be explained, not silent. A user blocked from switching tabs should be able to find out why and how to release it.
 
 ### 5.5 Compatibility
-- **NFR-C1:** Chrome >= 110 (`storage.session`), Brave, Edge, Opera, and Vivaldi.
+- **NFR-C1:** Chrome >= 110 (`storage.session`), Brave, Edge, Opera, and Vivaldi. Firefox >= 115 builds from the same codebase but is tested after the MVP.
 - **NFR-C2:** Windows, macOS, and Linux.
 - **NFR-C3:** Defined behavior with multiple windows (MVP: lock applies within the timed tab's window only).
 
 ### 5.6 Maintainability and Testing
-- **NFR-M1:** Plain JS, no build step; the folder loads unpacked.
+- **NFR-M1:** Stack is WXT + TypeScript + Vitest (Node >= 20.19). WXT generates per-browser manifests (MV3 everywhere); the extension loads unpacked from `.output/<browser>-mv3`. No runtime dependencies.
 - **NFR-M2:** The timer state machine is a pure function module (no `chrome.*` calls) so it can be unit tested.
 - **NFR-Q1:** Unit tests for all state transitions and time math (start, pause, resume, expire, extend, stop).
 - **NFR-Q2:** A manual test checklist: start, lock reverts tab switch, new tab, pause then switch, resume, stop phrase, expiry prompt (close / add time / dismiss), manual tab close, multiple windows, restricted pages.

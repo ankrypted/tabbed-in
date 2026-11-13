@@ -1,0 +1,10 @@
+body { width: 260px; font: 14px system-ui, sans-serif; padding: 12px; }
+h3 { margin: 0 0 4px; font-size: 14px; }
+#title { color: #666; font-size: 12px; margin-bottom: 10px;
+         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row { display: flex; gap: 6px; margin-bottom: 8px; }
+button { flex: 1; padding: 6px; cursor: pointer; }
+input { width: 100%; box-sizing: border-box; padding: 6px; }
+#remaining { font-size: 24px; margin: 6px 0; }
+.hidden { display: none; }
+small { color: #888; }
