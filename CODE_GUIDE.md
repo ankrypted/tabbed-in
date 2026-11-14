@@ -284,7 +284,7 @@ Popup styling: 260 px wide, a single-line truncated tab title, button/input layo
 ## Tests
 
 - **Unit tests** (`npm test`, Vitest): `utils/*.test.ts`, 67 tests of the pure logic. No browser needed.
-- **Browser tests** (`npm run test:e2e`): [e2e/](e2e/) holds Playwright scripts that drive a real Brave with the built extension, 85 checks in 7 files. [e2e/helpers.mjs](e2e/helpers.mjs) launches the browser and prepares the extension copy, and [e2e/run.mjs](e2e/run.mjs) runs every `*.e2e.mjs` file. See [e2e/README.md](e2e/README.md) for what each file covers, what can't be automated, and how to add a test.
+- **Browser tests** (`npm run test:e2e`): [e2e/](e2e/) holds Playwright scripts that drive a real Brave with the built extension, 96 checks in 8 files. [e2e/helpers.mjs](e2e/helpers.mjs) launches the browser and prepares the extension copy, and [e2e/run.mjs](e2e/run.mjs) runs every `*.e2e.mjs` file. See [e2e/README.md](e2e/README.md) for what each file covers, what can't be automated, and how to add a test.
 
 ## Configuration
 

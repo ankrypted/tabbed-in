@@ -4,12 +4,12 @@ Tabbed In locks you to one browser tab for a set time. When time is up, a bell r
 
 Works in **Brave, Chrome, Edge, Opera, and Vivaldi** (any Chromium browser) on Windows, macOS, and Linux.
 
-## Download (version 0.1.0)
+## Download (version 0.2.0)
 
 | Your system | Download |
 |---|---|
-| **Windows** (easiest) | [tabbed-in-0.1.0-extension.zip](https://github.com/ankrypted/tabbed-in/raw/dev/releases/tabbed-in-0.1.0-extension.zip) |
-| **macOS / Linux** | [tabbed-in-0.1.0-extension.tar.gz](https://github.com/ankrypted/tabbed-in/raw/dev/releases/tabbed-in-0.1.0-extension.tar.gz) |
+| **Windows** (easiest) | [tabbed-in-0.2.0-extension.zip](https://github.com/ankrypted/tabbed-in/raw/dev/releases/tabbed-in-0.2.0-extension.zip) |
+| **macOS / Linux** | [tabbed-in-0.2.0-extension.tar.gz](https://github.com/ankrypted/tabbed-in/raw/dev/releases/tabbed-in-0.2.0-extension.tar.gz) |
 
 Both contain exactly the same files.
 
@@ -18,15 +18,15 @@ Both contain exactly the same files.
 1. **Unpack it somewhere permanent**, for example `Documents\TabbedIn` or `~/TabbedIn`. Your browser loads the extension straight from this folder, so **don't delete or move it** afterwards.
    - **Windows:** right-click the zip, then **Extract All...**
    - **macOS:** double-click the `.tar.gz`
-   - **Linux:** `tar -xzf tabbed-in-0.1.0-extension.tar.gz`
-   - The `.tar.gz` unpacks into a folder named `tabbed-in-0.1.0`. For the zip, choose or create a folder to extract into. Either way, the folder you end up with has a file called `manifest.json` directly inside it.
+   - **Linux:** `tar -xzf tabbed-in-0.2.0-extension.tar.gz`
+   - The `.tar.gz` unpacks into a folder named `tabbed-in-0.2.0`. For the zip, choose or create a folder to extract into. Either way, the folder you end up with has a file called `manifest.json` directly inside it.
 2. In your browser, open the Extensions page. Click the address bar, type one of these, and press Enter:
    - Brave: `brave://extensions`
    - Chrome: `chrome://extensions`
    - Edge: `edge://extensions`
 3. Turn on **Developer mode** (switch in the top-right corner).
 4. Click **Load unpacked** (top-left) and choose the folder that has `manifest.json` in it.
-5. A card named **Tabbed In 0.1.0** appears. Click the puzzle-piece icon in the toolbar and **pin** Tabbed In.
+5. A card named **Tabbed In 0.2.0** appears. Click the puzzle-piece icon in the toolbar and **pin** Tabbed In.
 
 ## Use it
 

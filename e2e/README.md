@@ -37,6 +37,7 @@ Set `BROWSER_PATH` to a Brave or Chromium executable. If it's unset, the helper 
 | `popup-closes.e2e.mjs` | 3 | The popup is destroyed at the site-access request (as the browser does); the timer and lock survive |
 | `widget.e2e.mjs` | 8 | Widget appears, default position, drag, clamps to the viewport, remembers position across reload, removes itself on stop, no console errors |
 | `lock.e2e.mjs` | 20 | Switch-back, explanatory note, new-tab-page tabs closed, link-opened tabs kept, in-tab navigation, one timer at a time, stop, circuit breaker, corrupt record, closing the timed tab |
+| `popup-group.e2e.mjs` | 11 | The real popup UI on a tab in a group: option shown and ticked, Start stores a group timer, switching inside the group sticks, outside is reverted, stop from the other group tab (only the active-tab lookup is stubbed) |
 | `group.e2e.mjs` | 30 | Group timer: free switching inside the group, revert to the last group tab, widget on every group tab (also ones added later), New Tab page closed, closing the starting tab keeps the timer, group dissolved releases the lock, single-tab fallbacks |
 | `drag-error.e2e.mjs` | 5 | Regression test for the "user may be dragging a tab" bug: retries, no self-release, stopping mid-retry |
 | `expiry.e2e.mjs` | 14 | When time is up: the tab is **not** closed, the timer stops on its own, the lock lifts, the widget goes away, a notification is shown, and the bell page is created and its audio engine runs. A timer stopped early does not ring |
