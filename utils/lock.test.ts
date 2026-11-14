@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   decideLockAction,
+  findTimerFor,
   isNewTabPage,
   MAX_END_AHEAD_MS,
   recordRevert,
@@ -163,5 +164,63 @@ describe('recordRevert (circuit breaker)', () => {
   it('forgets old reverts', () => {
     const { history } = recordRevert([NOW - 10_000, NOW - 9_000], NOW);
     expect(history).toEqual([NOW]);
+  });
+});
+
+describe('group timers', () => {
+  const group: Timers = { '10': { end: NOW + 300_000, windowId: 1, groupId: 7, lastTabId: 10 } };
+
+  it('allows switching to another tab of the same group (and says so)', () => {
+    expect(decideLockAction(group, { tabId: 11, windowId: 1, groupId: 7 }, NOW)).toEqual({
+      action: 'track',
+      timerTabId: 10,
+    });
+  });
+
+  it('reverts a tab outside the group, including an ungrouped one', () => {
+    for (const groupId of [8, -1, undefined]) {
+      expect(decideLockAction(group, { tabId: 5, windowId: 1, groupId }, NOW)).toEqual({
+        action: 'revert',
+        timerTabId: 10,
+      });
+    }
+  });
+
+  it('does not let a single-tab timer treat group members as allowed', () => {
+    expect(decideLockAction(running, { tabId: 11, windowId: 1, groupId: 7 }, NOW).action).toBe('revert');
+  });
+
+  it('still fails open on an invalid or stale group record', () => {
+    const bad: Timers = { '10': { end: NOW - STALE_AFTER_MS - 1, windowId: 1, groupId: 7 } };
+    expect(decideLockAction(bad, { tabId: 5, windowId: 1, groupId: 1 }, NOW).action).toBe('release');
+    const off: Timers = { '10': { end: NOW + 300_000, windowId: 1, groupId: 7, lockOff: true } };
+    expect(decideLockAction(off, { tabId: 5, windowId: 1, groupId: 1 }, NOW).action).toBe('ignore');
+  });
+
+  it('closes a New Tab page opened inside the group, keeps other tabs added to it', () => {
+    const base = { windowId: 1, groupId: 7 };
+    expect(shouldCloseNewTab(group, { id: 20, ...base, pendingUrl: 'chrome://newtab/' }, NOW).action).toBe('close');
+    expect(shouldCloseNewTab(group, { id: 21, ...base, url: 'https://example.com/' }, NOW).action).toBe('ignore');
+  });
+
+  it('closes a tab opened outside the group, but keeps links opened from the last group tab', () => {
+    const g: Timers = { '10': { end: NOW + 300_000, windowId: 1, groupId: 7, lastTabId: 12 } };
+    expect(shouldCloseNewTab(g, { id: 20, windowId: 1, groupId: -1, url: 'about:blank' }, NOW).action).toBe('close');
+    expect(
+      shouldCloseNewTab(g, { id: 20, windowId: 1, groupId: -1, openerTabId: 12, url: 'https://a.com/' }, NOW).action,
+    ).toBe('ignore');
+  });
+});
+
+describe('findTimerFor', () => {
+  const t: Timers = {
+    '10': { end: NOW + 1, windowId: 1, groupId: 7, lastTabId: 10 },
+  };
+  it('matches the key tab and any tab of the group, nothing else', () => {
+    expect(findTimerFor(t, { id: 10, groupId: -1 })?.[0]).toBe('10');
+    expect(findTimerFor(t, { id: 11, groupId: 7 })?.[0]).toBe('10');
+    expect(findTimerFor(t, { id: 12, groupId: 8 })).toBeNull();
+    expect(findTimerFor(t, { id: 12, groupId: -1 })).toBeNull();
+    expect(findTimerFor({ '10': { end: NOW, windowId: 1 } }, { id: 11, groupId: 7 })).toBeNull();
   });
 });

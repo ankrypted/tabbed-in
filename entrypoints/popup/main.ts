@@ -1,4 +1,4 @@
-import type { Timers } from '../../utils/lock';
+import { findTimerFor, isGroupId, type Timers } from '../../utils/lock';
 import { formatRemaining } from '../../utils/time';
 
 const PHRASE = 'i am done';
@@ -11,12 +11,22 @@ async function main() {
   const tabId = tab.id;
   $('title').textContent = tab.title || tab.url || '';
 
+  // If this tab is in a browser tab group, offer to time the whole group: the
+  // user can then move between its tabs freely.
+  const inGroup = isGroupId(tab.groupId);
+  if (inGroup) {
+    const n = (await browser.tabs.query({ groupId: tab.groupId })).length;
+    $('grouptext').textContent = `Whole tab group (${n} tab${n === 1 ? '' : 's'}): switch freely between them`;
+    $('groupopt').classList.remove('hidden');
+  }
+
   const start = async (minutes: number) => {
     if (!(minutes > 0)) return;
+    const group = inGroup && $<HTMLInputElement>('group').checked;
     // Start the timer FIRST. The browser closes this popup the moment it shows
     // the site-access dialog, so anything after that request may never run.
     const res: { ok: boolean; error?: string } | undefined = await browser.runtime
-      .sendMessage({ type: 'start', tabId, minutes })
+      .sendMessage({ type: 'start', tabId, minutes, group })
       .catch(() => undefined);
     if (!res?.ok) {
       showError(res?.error ?? 'Could not start the timer. Try again.');
@@ -46,7 +56,10 @@ async function main() {
   $<HTMLInputElement>('phrase').addEventListener('input', async (e) => {
     const input = e.target as HTMLInputElement;
     if (input.value.trim().toLowerCase() === PHRASE) {
-      await browser.runtime.sendMessage({ type: 'cancel', tabId });
+      // A group timer is stored under one tab of the group, so look up the key.
+      const timers = ((await browser.storage.session.get('timers')).timers ?? {}) as Timers;
+      const key = findTimerFor(timers, tab!)?.[0] ?? String(tabId);
+      await browser.runtime.sendMessage({ type: 'cancel', tabId: +key });
       input.value = '';
       render();
     }
@@ -55,7 +68,7 @@ async function main() {
   async function render() {
     const r = await browser.storage.session.get('timers');
     const timers = (r.timers ?? {}) as Timers;
-    const t = timers[tabId];
+    const t = findTimerFor(timers, tab!)?.[1];
     const timerElsewhere = !t && Object.keys(timers).length > 0;
     $('setup').classList.toggle('hidden', !!t || timerElsewhere);
     $('blocked').classList.toggle('hidden', !timerElsewhere);
@@ -64,7 +77,9 @@ async function main() {
       $('remaining').textContent = `${formatRemaining(t.end - Date.now())} left`;
       $('lockinfo').querySelector('small')!.textContent = t.lockOff
         ? 'Tab lock is off for this timer.'
-        : 'Tabs are locked while this timer runs.';
+        : isGroupId(t.groupId)
+          ? 'Locked to this tab group: other tabs are blocked.'
+          : 'Tabs are locked while this timer runs.';
     }
   }
 

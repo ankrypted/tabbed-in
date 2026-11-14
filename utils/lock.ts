@@ -7,14 +7,43 @@ export type TimerRecord = {
   windowId?: number;
   /** Set when the lock was released (circuit breaker / error). The timer keeps running. */
   lockOff?: boolean;
+  /**
+   * Group timer: the browser tab group this timer covers. The user may move
+   * freely between tabs of this group. Absent for a single-tab timer.
+   */
+  groupId?: number;
+  /** Group timer: the group tab the user was last on (where a revert returns to). */
+  lastTabId?: number;
 };
 export type Timers = Record<string, TimerRecord>;
-export type Activation = { tabId: number; windowId: number };
+/** `groupId` is the browser's tab group id (-1 or undefined: not in a group). */
+export type Activation = { tabId: number; windowId: number; groupId?: number };
 
 export type LockDecision =
   | { action: 'ignore' }
   | { action: 'revert'; timerTabId: number }
+  /** Group timer: the user moved to another tab of the same group (allowed). */
+  | { action: 'track'; timerTabId: number }
   | { action: 'release'; timerTabId: number; reason: string };
+
+/** Is this a real tab-group id? (Chrome uses -1 for "no group".) */
+export const isGroupId = (g: unknown): g is number => typeof g === 'number' && g >= 0;
+
+/**
+ * Find the timer that applies to a tab: the one started on it, or a group timer
+ * whose group the tab belongs to. Returns [key, record] (key = the tab id the
+ * record is stored under) or null.
+ */
+export function findTimerFor(
+  timers: Timers,
+  tab: { id?: number; groupId?: number },
+): [string, TimerRecord] | null {
+  for (const [key, t] of Object.entries(timers)) {
+    if (tab.id !== undefined && String(tab.id) === key) return [key, t];
+    if (isGroupId(t.groupId) && tab.groupId === t.groupId) return [key, t];
+  }
+  return null;
+}
 
 /** A timer whose alarm should have fired long ago is stale: never hold a lock for it. */
 export const STALE_AFTER_MS = 60_000;
@@ -43,6 +72,11 @@ export function decideLockAction(
     if (t.end < now - STALE_AFTER_MS) {
       return { action: 'release', timerTabId, reason: 'stale timer record' };
     }
+    if (isGroupId(t.groupId)) {
+      // Group timer: any tab of the group is fine, everything else is reverted.
+      if (activation.groupId === t.groupId) return { action: 'track', timerTabId };
+      return { action: 'revert', timerTabId };
+    }
     if (timerTabId === activation.tabId) continue; // already on the timed tab
     return { action: 'revert', timerTabId };
   }
@@ -52,6 +86,7 @@ export function decideLockAction(
 export type NewTab = {
   id?: number;
   windowId: number;
+  groupId?: number;
   openerTabId?: number;
   url?: string;
   pendingUrl?: string;
@@ -77,10 +112,23 @@ export function isNewTabPage(url?: string): boolean {
  */
 export function shouldCloseNewTab(timers: Timers, tab: NewTab, now: number): NewTabDecision {
   if (tab.id === undefined) return { action: 'ignore' };
-  const d = decideLockAction(timers, { tabId: tab.id, windowId: tab.windowId }, now);
-  if (d.action !== 'revert') return { action: 'ignore' };
-  const openedByTimedPage = tab.openerTabId === d.timerTabId;
+  const d = decideLockAction(
+    timers,
+    { tabId: tab.id, windowId: tab.windowId, groupId: tab.groupId },
+    now,
+  );
   const userOpened = isNewTabPage(tab.pendingUrl) || isNewTabPage(tab.url);
+  if (d.action === 'track') {
+    // Inside the locked group: only a blank New Tab page is turned away, since it
+    // would be a doorway to any site. Other tabs added to the group are allowed.
+    return userOpened ? { action: 'close', timerTabId: d.timerTabId } : { action: 'ignore' };
+  }
+  if (d.action !== 'revert') return { action: 'ignore' };
+  const t = timers[String(d.timerTabId)];
+  // For a group timer, a link opened from any tab of the group counts as "from the page".
+  const openedByTimedPage =
+    tab.openerTabId === d.timerTabId ||
+    (isGroupId(t?.groupId) && tab.openerTabId !== undefined && tab.openerTabId === t.lastTabId);
   if (openedByTimedPage && !userOpened) return { action: 'ignore' };
   return { action: 'close', timerTabId: d.timerTabId };
 }

@@ -1,6 +1,6 @@
 # Tabbed In
 
-A browser extension that locks you to one tab for a set time. See [REQUIREMENTS.md](REQUIREMENTS.md).
+A browser extension that locks you to one tab, or one browser tab group, for a set time. See [REQUIREMENTS.md](REQUIREMENTS.md).
 
 Status: pre-MVP. The code is a baseline port of the original tab timer; the state machine and focus lock are next. Live progress is in [MVP_CHECKLIST.md](MVP_CHECKLIST.md).
 
@@ -19,8 +19,8 @@ npm install
 npm run dev            # Chrome with hot reload
 npm run dev:firefox    # Firefox with hot reload
 npm run compile        # typecheck
-npm test               # unit tests (Vitest, 60 tests)
-npm run test:e2e       # browser tests in a real Brave (55 checks); see e2e/README.md
+npm test               # unit tests (Vitest, 67 tests)
+npm run test:e2e       # browser tests in a real Brave (85 checks); see e2e/README.md
 npm run build          # -> .output/chrome-mv3
 npm run build:firefox  # -> .output/firefox-mv3
 npm run zip            # store-ready zip
