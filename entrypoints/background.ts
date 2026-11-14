@@ -294,15 +294,38 @@ async function returnToTimedTab(timedTabId: number): Promise<number | null> {
   }
 }
 
+/**
+ * Browsers may attach a brand-new tab to its group a moment AFTER creating it
+ * (the group's own "+" button). So for a tab created in the last couple of
+ * seconds that doesn't look grouped yet, wait briefly and look again before
+ * treating it as an outsider.
+ */
+const recentlyCreated = new Map<number, number>();
+const NEW_TAB_GRACE_MS = 2000;
+const GROUP_SETTLE_MS = 400;
+
+async function settledGroupId(tabId: number, groupId: number | undefined, wanted: number) {
+  const born = recentlyCreated.get(tabId);
+  if (groupId === wanted || born === undefined || Date.now() - born > NEW_TAB_GRACE_MS) return groupId;
+  await new Promise((r) => setTimeout(r, GROUP_SETTLE_MS));
+  try {
+    return (await browser.tabs.get(tabId)).groupId;
+  } catch {
+    return groupId;
+  }
+}
+
 async function enforceLock(info: { tabId: number; windowId: number }) {
   try {
     const timers = await getTimers();
     // onActivated doesn't say which group the tab is in; only look it up when a
     // group timer exists (single-tab timers behave exactly as before).
     const activation: { tabId: number; windowId: number; groupId?: number } = { ...info };
-    if (Object.values(timers).some((t) => isGroupId(t.groupId))) {
+    const groupTimer = Object.values(timers).find((t) => isGroupId(t.groupId));
+    if (groupTimer) {
       try {
-        activation.groupId = (await browser.tabs.get(info.tabId)).groupId;
+        const g = (await browser.tabs.get(info.tabId)).groupId;
+        activation.groupId = await settledGroupId(info.tabId, g, groupTimer.groupId!);
       } catch {
         return; // the tab is already gone: nothing to enforce (fail open)
       }
@@ -381,6 +404,11 @@ async function closeNewTabIfLocked(tab: {
   pendingUrl?: string;
 }) {
   try {
+    const timers = await getTimers();
+    const groupTimer = Object.values(timers).find((t) => isGroupId(t.groupId));
+    if (tab.id !== undefined && groupTimer) {
+      tab = { ...tab, groupId: await settledGroupId(tab.id, tab.groupId, groupTimer.groupId!) };
+    }
     const decision = shouldCloseNewTab(await getTimers(), tab, Date.now());
     if (decision.action !== 'close' || tab.id === undefined) return;
     const newTabId = tab.id;
@@ -431,7 +459,13 @@ export default defineBackground(() => {
   });
 
   browser.tabs.onActivated.addListener((info) => enforceLock(info));
-  browser.tabs.onCreated.addListener((tab) => closeNewTabIfLocked(tab));
+  browser.tabs.onCreated.addListener((tab) => {
+    if (tab.id !== undefined) {
+      recentlyCreated.set(tab.id, Date.now());
+      setTimeout(() => recentlyCreated.delete(tab.id!), NEW_TAB_GRACE_MS + 1000);
+    }
+    closeNewTabIfLocked(tab);
+  });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === 'tick') return updateBadges();

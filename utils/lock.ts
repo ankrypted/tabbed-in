@@ -118,11 +118,9 @@ export function shouldCloseNewTab(timers: Timers, tab: NewTab, now: number): New
     now,
   );
   const userOpened = isNewTabPage(tab.pendingUrl) || isNewTabPage(tab.url);
-  if (d.action === 'track') {
-    // Inside the locked group: only a blank New Tab page is turned away, since it
-    // would be a doorway to any site. Other tabs added to the group are allowed.
-    return userOpened ? { action: 'close', timerTabId: d.timerTabId } : { action: 'ignore' };
-  }
+  // Inside the locked group, new tabs (including a New Tab page opened with the
+  // group's own "+") are allowed: they are part of the group being timed.
+  if (d.action === 'track') return { action: 'ignore' };
   if (d.action !== 'revert') return { action: 'ignore' };
   const t = timers[String(d.timerTabId)];
   // For a group timer, a link opened from any tab of the group counts as "from the page".

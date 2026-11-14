@@ -81,6 +81,27 @@ try {
   t.check('a New Tab page is closed while the group is locked', s.count === before, `before=${before} after=${s.count}`);
   t.check('...and focus returns to a group tab', s.activeId === s.g1 || s.activeId === s.g2);
 
+  // --- new tabs INSIDE the group are allowed (the group's own "+") ----------------
+  // The browser may attach the tab to the group right at creation or a moment later.
+  for (const delay of [0, 250]) {
+    const n0 = (await info()).count;
+    const newId = await sw.evaluate(async ([g, d]) => {
+      const tab = await chrome.tabs.create({}); // the browser's New Tab page, like "+"
+      if (d) await new Promise((r) => setTimeout(r, d));
+      await chrome.tabs.group({ tabIds: [tab.id], groupId: g });
+      return tab.id;
+    }, [groupId, delay]);
+    await sleep(2000);
+    s = await info();
+    const alive = await sw.evaluate((x) => chrome.tabs.get(x).then(() => true, () => false), newId);
+    t.check(`a new tab put into the group (after ${delay} ms) is kept`, alive && s.count === n0 + 1, `alive=${alive} count=${s.count} was ${n0}`);
+    t.check('...and it stays the active tab (no snap-back)', s.activeId === newId, `active=${s.activeId} new=${newId}`);
+    await sw.evaluate((x) => chrome.tabs.remove(x), newId);
+    await sleep(600);
+    s = await info();
+    t.check('...closing it returns to a group tab', s.activeId === s.g1 || s.activeId === s.g2);
+  }
+
   // --- a tab joining the group is covered by the timer -------------------------
   await sw.evaluate(async ([o, g]) => chrome.tabs.group({ tabIds: [o], groupId: g }), [s.o, groupId]);
   await sleep(1200);

@@ -20,7 +20,7 @@ npm run dev            # Chrome with hot reload
 npm run dev:firefox    # Firefox with hot reload
 npm run compile        # typecheck
 npm test               # unit tests (Vitest, 67 tests)
-npm run test:e2e       # browser tests in a real Brave (96 checks); see e2e/README.md
+npm run test:e2e       # browser tests in a real Brave (102 checks); see e2e/README.md
 npm run build          # -> .output/chrome-mv3
 npm run build:firefox  # -> .output/firefox-mv3
 npm run zip            # store-ready zip
@@ -29,8 +29,8 @@ npm run zip            # store-ready zip
 ### Share it with friends
 
 **Simplest: just send the extension folder.** The built extension is checked in under [releases/](releases/) as a `.tar.gz` and a `.zip`, with install steps in [releases/README.md](releases/README.md). Direct links:
-- Windows: https://github.com/ankrypted/tabbed-in/raw/dev/releases/tabbed-in-0.2.0-extension.zip
-- macOS / Linux: https://github.com/ankrypted/tabbed-in/raw/dev/releases/tabbed-in-0.2.0-extension.tar.gz
+- Windows: https://github.com/ankrypted/tabbed-in/raw/dev/releases/tabbed-in-0.2.1-extension.zip
+- macOS / Linux: https://github.com/ankrypted/tabbed-in/raw/dev/releases/tabbed-in-0.2.1-extension.tar.gz
 
 To rebuild them after a code change: `npm run release:extension` (builds, then writes both into `releases/`; the archive is reproducible, so unchanged code gives identical bytes).
 

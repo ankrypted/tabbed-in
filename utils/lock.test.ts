@@ -197,9 +197,9 @@ describe('group timers', () => {
     expect(decideLockAction(off, { tabId: 5, windowId: 1, groupId: 1 }, NOW).action).toBe('ignore');
   });
 
-  it('closes a New Tab page opened inside the group, keeps other tabs added to it', () => {
+  it('allows new tabs inside the group, even a New Tab page opened with the group plus button', () => {
     const base = { windowId: 1, groupId: 7 };
-    expect(shouldCloseNewTab(group, { id: 20, ...base, pendingUrl: 'chrome://newtab/' }, NOW).action).toBe('close');
+    expect(shouldCloseNewTab(group, { id: 20, ...base, pendingUrl: 'chrome://newtab/' }, NOW).action).toBe('ignore');
     expect(shouldCloseNewTab(group, { id: 21, ...base, url: 'https://example.com/' }, NOW).action).toBe('ignore');
   });
 

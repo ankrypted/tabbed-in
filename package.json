@@ -1,6 +1,6 @@
 {
   "name": "tabbed-in",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Lock yourself to one tab until the timer ends.",
   "type": "module",
