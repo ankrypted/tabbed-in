@@ -224,3 +224,16 @@ describe('findTimerFor', () => {
     expect(findTimerFor({ '10': { end: NOW, windowId: 1 } }, { id: 11, groupId: 7 })).toBeNull();
   });
 });
+
+describe('leisure timers never lock', () => {
+  const leisure: Timers = { '10': { end: NOW + 300_000, windowId: 1, mode: 'leisure' } };
+  it('lets you switch tabs freely', () => {
+    expect(decideLockAction(leisure, { tabId: 5, windowId: 1 }, NOW)).toEqual({ action: 'ignore' });
+  });
+  it('does not close new tabs', () => {
+    expect(shouldCloseNewTab(leisure, { id: 20, windowId: 1, pendingUrl: 'chrome://newtab/' }, NOW).action).toBe('ignore');
+  });
+  it('a record with no mode is still a focus timer', () => {
+    expect(decideLockAction(running, { tabId: 5, windowId: 1 }, NOW).action).toBe('revert');
+  });
+});

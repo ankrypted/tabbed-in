@@ -1,8 +1,16 @@
 // Pure decision logic for the tab-switch lock. No browser APIs, so it is unit tested.
 // The background script applies the decisions.
 
+/**
+ * focus: locks you to the tab/group, bell at the end, nothing is closed.
+ * leisure: no lock; the page blurs over the last 15 s and the tab closes at zero.
+ */
+export type TimerMode = 'focus' | 'leisure';
+
 export type TimerRecord = {
   end: number;
+  /** Missing on older records: treated as focus. */
+  mode?: TimerMode;
   /** Window the timed tab lives in. Missing on legacy records, which are never locked. */
   windowId?: number;
   /** Set when the lock was released (circuit breaker / error). The timer keeps running. */
@@ -63,6 +71,7 @@ export function decideLockAction(
     const timerTabId = Number(id);
     if (!Number.isInteger(timerTabId)) continue;
     if (t.lockOff) continue;
+    if (t.mode === 'leisure') continue; // leisure never locks
     if (t.windowId === undefined) continue; // legacy record: no lock
     if (t.windowId !== activation.windowId) continue; // other window: not our business
 

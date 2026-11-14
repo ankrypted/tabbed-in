@@ -15,6 +15,13 @@
   user-select: none;
   touch-action: none;
 }
+.haze {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646; /* just under the timer card */
+  pointer-events: none;
+}
 .widget.dragging {
   cursor: grabbing;
 }

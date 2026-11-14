@@ -11,6 +11,10 @@
   <div id="title"></div>
 
   <div id="setup">
+    <div class="row" id="modes">
+      <button id="mode-focus" class="on" type="button">Focus</button>
+      <button id="mode-leisure" type="button">Leisure</button>
+    </div>
     <div class="row">
       <button data-m="5">5m</button>
       <button data-m="15">15m</button>
@@ -25,7 +29,7 @@
       <input id="group" type="checkbox" checked>
       <span id="grouptext"></span>
     </label>
-    <small>You'll be locked to this tab until the timer ends or you stop it: other tabs are blocked and new tabs you open are closed. When time is up, a bell rings and the lock lifts. The tab stays open.</small>
+    <small id="modehelp"></small>
   </div>
 
   <div id="error" class="hidden"><small></small></div>

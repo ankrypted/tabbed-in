@@ -8,6 +8,7 @@ import {
   isGroupId,
   recordRevert,
   shouldCloseNewTab,
+  type TimerMode,
   type TimerRecord,
   type Timers,
 } from '../utils/lock';
@@ -86,7 +87,12 @@ const notifyWidget = (tabId: number, end: number | null) =>
 type StartResult = { ok: true } | { ok: false; error: string };
 
 /** `group`: cover the whole tab group of `tabId` (ignored if the tab is not in one). */
-async function startTimer(tabId: number, minutes: number, group = false): Promise<StartResult> {
+async function startTimer(
+  tabId: number,
+  minutes: number,
+  group = false,
+  mode: TimerMode = 'focus',
+): Promise<StartResult> {
   if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440) {
     return { ok: false, error: 'Enter a number of minutes between 1 and 1440.' };
   }
@@ -111,13 +117,14 @@ async function startTimer(tabId: number, minutes: number, group = false): Promis
   try {
     const tab = await browser.tabs.get(tabId);
     windowId = tab.windowId;
-    if (group && isGroupId(tab.groupId)) groupId = tab.groupId;
+    // Leisure mode times one tab only: closing a whole group at zero is too destructive.
+    if (group && mode === 'focus' && isGroupId(tab.groupId)) groupId = tab.groupId;
   } catch {
     return { ok: false, error: 'That tab is no longer available.' };
   }
 
   const end = Date.now() + minutes * 60000;
-  const record: TimerRecord = { end, windowId };
+  const record: TimerRecord = { end, windowId, mode };
   if (groupId !== undefined) {
     record.groupId = groupId;
     record.lastTabId = tabId;
@@ -211,15 +218,19 @@ async function ringBell() {
   }
 }
 
-async function showDoneNotification(tabTitle: string) {
+async function showDoneNotification(tabTitle: string, closed = false) {
   try {
     await browser.notifications.create('tabbed-in-done', {
       type: 'basic',
       iconUrl: browser.runtime.getURL('/icon/128.png'),
       title: "Time's up",
-      message: tabTitle
-        ? `Your timer on "${tabTitle}" has ended. The tab is still open.`
-        : 'Your timer has ended. The tab is still open.',
+      message: closed
+        ? tabTitle
+          ? `Your leisure time is up. "${tabTitle}" was closed.`
+          : 'Your leisure time is up. The tab was closed.'
+        : tabTitle
+          ? `Your timer on "${tabTitle}" has ended. The tab is still open.`
+          : 'Your timer has ended. The tab is still open.',
       priority: 2,
     });
   } catch (err) {
@@ -227,7 +238,19 @@ async function showDoneNotification(tabTitle: string) {
   }
 }
 
+const finishing = new Set<number>(); // the alarm and a widget can both report the end
+
 async function finishTimer(tabId: number) {
+  if (finishing.has(tabId)) return;
+  finishing.add(tabId);
+  try {
+    await finishTimerOnce(tabId);
+  } finally {
+    setTimeout(() => finishing.delete(tabId), 5000);
+  }
+}
+
+async function finishTimerOnce(tabId: number) {
   const t = (await getTimers())[tabId];
   if (!t) return; // cancelled in the meantime
   if (t.end > Date.now() + 2000) return; // a stale alarm from an earlier timer on this tab
@@ -238,6 +261,19 @@ async function finishTimer(tabId: number) {
   } catch {}
 
   await cancelTimer(tabId); // removes the timer (so the lock is gone), badge, and widget
+
+  if (t.mode === 'leisure') {
+    // Leisure mode: the tab closes at zero (the page has already faded out).
+    let closed = false;
+    try {
+      await retry(() => browser.tabs.remove(tabId)); // same mouse-down caveat as the lock
+      closed = true;
+    } catch (err) {
+      console.warn('[tabbed-in] could not close the tab', err);
+    }
+    await showDoneNotification(title, closed);
+    return;
+  }
   await Promise.all([ringBell(), showDoneNotification(title)]);
 }
 
@@ -431,7 +467,8 @@ async function closeNewTabIfLocked(tab: {
 }
 
 type Message =
-  | { type: 'start'; tabId: number; minutes: number; group?: boolean }
+  | { type: 'start'; tabId: number; minutes: number; group?: boolean; mode?: TimerMode }
+  | { type: 'time-up' }
   | { type: 'cancel'; tabId: number }
   | { type: 'widget-state' }
   | { type: 'bell-played'; state: string };
@@ -443,6 +480,18 @@ export default defineBackground(() => {
       browser.storage.session.set({ lastBell: { at: Date.now(), state: msg.state } });
       return false;
     }
+    if (msg.type === 'time-up') {
+      // A leisure widget reached zero. The alarm does the same, but this is exact
+      // (alarms can lag), so the tab closes right as the blur completes.
+      const tab = sender.tab;
+      if (tab) {
+        getTimers().then((t) => {
+          const hit = findTimerFor(t, tab);
+          if (hit && hit[1].mode === 'leisure') finishTimer(+hit[0]);
+        });
+      }
+      return false;
+    }
     if (msg.type === 'widget-state') {
       // A freshly injected widget asks what to show for its own tab.
       // (a group timer applies to every tab of its group).
@@ -451,7 +500,7 @@ export default defineBackground(() => {
       return true;
     }
     const run: Promise<StartResult> | null =
-      msg.type === 'start' ? startTimer(msg.tabId, msg.minutes, msg.group)
+      msg.type === 'start' ? startTimer(msg.tabId, msg.minutes, msg.group, msg.mode === 'leisure' ? 'leisure' : 'focus')
       : msg.type === 'cancel' ? cancelTimer(msg.tabId).then((): StartResult => ({ ok: true }))
       : null;
     if (run) run.then(respond);

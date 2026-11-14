@@ -2,11 +2,12 @@
 import css from './style.css?inline';
 import { clampPosition, defaultPosition, isPos, type Pos } from '../../utils/position';
 import { formatRemaining } from '../../utils/time';
+import { blurAmount } from '../../utils/blur';
 
 const TAG = 'tabbed-in-widget';
 const POS_KEY = 'widgetPos';
 
-type TimerState = { end: number } | null;
+type TimerState = { end: number; mode?: 'focus' | 'leisure' } | null;
 type Controller = { setEnd(end: number): void; flash(text: string): void };
 
 /**
@@ -36,7 +37,13 @@ export default defineContentScript({
         const style = document.createElement('style');
         style.textContent = css;
         shadow.append(style);
-        const mounted = mountWidget(ctx, container, state.end, isPos(saved) ? saved : null);
+        const mounted = mountWidget(
+          ctx,
+          container,
+          state.end,
+          state.mode === 'leisure',
+          isPos(saved) ? saved : null,
+        );
         controller = mounted.controller;
         return mounted.cleanup;
       },
@@ -69,27 +76,49 @@ function mountWidget(
   ctx: { setInterval: (fn: () => void, ms: number) => number },
   container: HTMLElement,
   initialEnd: number,
+  leisure: boolean,
   savedPos: Pos | null,
 ) {
   let end = initialEnd;
+  let reportedEnd = false;
 
   const el = document.createElement('div');
   el.className = 'widget';
   const label = document.createElement('div');
   label.className = 'label';
-  label.textContent = 'Tabbed In';
+  label.textContent = leisure ? 'Tabbed In · Leisure' : 'Tabbed In';
   const time = document.createElement('div');
   time.className = 'time';
   const note = document.createElement('div');
   note.className = 'note';
   el.append(label, time, note);
-  container.append(el);
+
+  // Leisure mode: a full-page haze over the last seconds. It sits under the timer
+  // card (so the card stays readable) and never blocks clicks.
+  const haze = document.createElement('div');
+  haze.className = 'haze';
+  container.append(haze, el);
 
   const tick = () => {
-    time.textContent = formatRemaining(end - Date.now());
+    const remaining = end - Date.now();
+    const text = formatRemaining(remaining);
+    if (time.textContent !== text) time.textContent = text;
+    if (!leisure) return;
+    const px = blurAmount(remaining);
+    haze.style.display = px > 0 ? 'block' : 'none';
+    if (px > 0) {
+      haze.style.backdropFilter = `blur(${px}px)`;
+      haze.style.background = `rgba(0, 0, 0, ${(px / 20) * 0.35})`;
+    }
+    if (remaining <= 0 && !reportedEnd) {
+      // The background closes the tab (its alarm does the same; whichever is first).
+      reportedEnd = true;
+      browser.runtime.sendMessage({ type: 'time-up' }).catch(() => {});
+    }
   };
   tick();
-  ctx.setInterval(tick, 1000);
+  // Fine steps in leisure mode so the blur ramps smoothly; once a second otherwise.
+  ctx.setInterval(tick, leisure ? 100 : 1000);
 
   // --- position ---
   const box = () => ({ width: el.offsetWidth, height: el.offsetHeight });
@@ -147,6 +176,7 @@ function mountWidget(
     controller: {
       setEnd(next: number) {
         end = next;
+        reportedEnd = false;
         tick();
       },
       flash,

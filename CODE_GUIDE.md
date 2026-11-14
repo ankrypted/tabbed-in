@@ -223,6 +223,9 @@ The widget's styles: fixed position, maximum z-index, dark card, grab/grabbing c
 - **Returning to the timed tab** (`returnToTimedTab`): Chrome fires `onActivated` on mouse-down and rejects `tabs.update` until the click ends, so the revert is retried every 100 ms for up to 4 s (`utils/retry.ts`). Each try re-checks that the timer still exists and the lock is on. If it still fails, it logs and gives up for that switch; it does not release the lock.
 - **Safety nets:** a vanished timed tab drops the timer; more than 5 reverts in 3 s trips the circuit breaker (`recordRevert`) and releases the lock; an exception in the lock logic itself releases every lock ("safe mode"). A failed tab switch-back does not.
 
+### Modes: focus and leisure
+Each timer record has a `mode`. **Focus** is everything above (lock, bell, nothing closed). **Leisure** has no lock: `decideLockAction` skips leisure records, so tab switches and new tabs are left alone. It times one tab only (the popup hides the group option; `startTimer` ignores `group`). In the last 15 seconds the widget (`mountWidget`, `leisure` flag) shows a full-page `.haze` overlay under the timer card, with `backdrop-filter: blur(px)` and a slight dim, where `px` comes from [utils/blur.ts](utils/blur.ts) (`blurAmount`: 0 until 15 s are left, then rising evenly to 20 px at zero). The overlay ignores the mouse. At zero the widget sends `time-up` and the background's `finishTimer` closes the tab (retrying while the mouse is down) and shows a "tab was closed" notification; the alarm does the same, and a `finishing` set makes sure only one of them acts. No bell in leisure mode.
+
 ### [utils/lock.ts](utils/lock.ts)
 Pure functions, no browser APIs, 31 unit tests ([lock.test.ts](utils/lock.test.ts)): `decideLockAction` (ignore / revert / release, failing open on anything doubtful), `shouldCloseNewTab` with `isNewTabPage` (which new tabs to close), and `recordRevert` (the circuit breaker). Also defines the `TimerRecord` and `Timers` types shared with the popup.
 
@@ -283,8 +286,8 @@ Popup styling: 260 px wide, a single-line truncated tab title, button/input layo
 
 ## Tests
 
-- **Unit tests** (`npm test`, Vitest): `utils/*.test.ts`, 67 tests of the pure logic. No browser needed.
-- **Browser tests** (`npm run test:e2e`): [e2e/](e2e/) holds Playwright scripts that drive a real Brave with the built extension, 102 checks in 8 files. [e2e/helpers.mjs](e2e/helpers.mjs) launches the browser and prepares the extension copy, and [e2e/run.mjs](e2e/run.mjs) runs every `*.e2e.mjs` file. See [e2e/README.md](e2e/README.md) for what each file covers, what can't be automated, and how to add a test.
+- **Unit tests** (`npm test`, Vitest): `utils/*.test.ts`, 75 tests of the pure logic. No browser needed.
+- **Browser tests** (`npm run test:e2e`): [e2e/](e2e/) holds Playwright scripts that drive a real Brave with the built extension, 123 checks in 9 files. [e2e/helpers.mjs](e2e/helpers.mjs) launches the browser and prepares the extension copy, and [e2e/run.mjs](e2e/run.mjs) runs every `*.e2e.mjs` file. See [e2e/README.md](e2e/README.md) for what each file covers, what can't be automated, and how to add a test.
 
 ## Configuration
 

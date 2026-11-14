@@ -61,8 +61,9 @@ Minimum functional requirements for **Tabbed In**, with live status. Full detail
 | Popup rewrite (pause/resume, validation, expired view) | ⬜ |
 | On-page widget (content script, Shadow DOM, drag, minimize) | 🟡 drag + remembered position built; minimize and pause/resume pending |
 | End-of-timer alert (bell via offscreen page + notification, tab stays open) | ✅ 14 browser checks |
-| Unit tests (position clamping, time formatting, lock decisions, circuit breaker, retry, bell) | ✅ 67 tests passing |
-| Browser tests in the repo (`npm run test:e2e`, `e2e/`) | ✅ 102 checks, 8 files, all passing |
+| Unit tests (position clamping, time formatting, lock decisions, circuit breaker, retry, bell) | ✅ 75 tests passing |
+| Browser tests in the repo (`npm run test:e2e`, `e2e/`) | ✅ 123 checks, 9 files, all passing |
+| Leisure mode: no lock, page blurs progressively over the last 15 s, tab closes at zero (`leisure.e2e.mjs`) | ✅ 21 browser checks (incl. blur ramp sampled at 16/10/5/1 s, tab closed at zero) + 8 unit tests; screenshots confirm the blur renders. Fullscreen video and sites that block extension scripts are not covered |
 | Group timer: one timer for a browser tab group, free switching inside it (`group.e2e.mjs`) | ✅ 36 browser checks + 7 unit tests. Hand-dragging tabs in the tab strip not automated |
 | Tab-switch lock with safety nets | ✅ verified in Brave (20/20 checks, plus 5/5 for the click-during-mouse-down failure). Real mouse clicks on the tab strip can't be automated, so please confirm by hand |
 | ~~Fallback prompt window for restricted pages~~ | ➖ not needed (no prompt) |

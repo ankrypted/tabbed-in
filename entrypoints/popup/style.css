@@ -9,3 +9,5 @@ input { width: 100%; box-sizing: border-box; padding: 6px; }
 .hidden { display: none; }
 small { color: #888; }
 #error small { color: #d93025; }
+#modes button { background: #f1f3f4; border: 1px solid #ccc; }
+#modes button.on { background: #1a73e8; border-color: #1a73e8; color: #fff; }

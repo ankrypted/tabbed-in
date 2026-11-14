@@ -1,6 +1,6 @@
 # Tabbed In
 
-A browser extension that locks you to one tab, or one browser tab group, for a set time. See [REQUIREMENTS.md](REQUIREMENTS.md).
+A browser extension with two modes: **Focus** locks you to one tab, or one browser tab group, for a set time; **Leisure** (for watching something) blurs the page over the last 15 seconds and closes the tab at zero. See [REQUIREMENTS.md](REQUIREMENTS.md).
 
 Status: pre-MVP. The code is a baseline port of the original tab timer; the state machine and focus lock are next. Live progress is in [MVP_CHECKLIST.md](MVP_CHECKLIST.md).
 
@@ -19,8 +19,8 @@ npm install
 npm run dev            # Chrome with hot reload
 npm run dev:firefox    # Firefox with hot reload
 npm run compile        # typecheck
-npm test               # unit tests (Vitest, 67 tests)
-npm run test:e2e       # browser tests in a real Brave (102 checks); see e2e/README.md
+npm test               # unit tests (Vitest, 75 tests)
+npm run test:e2e       # browser tests in a real Brave (123 checks); see e2e/README.md
 npm run build          # -> .output/chrome-mv3
 npm run build:firefox  # -> .output/firefox-mv3
 npm run zip            # store-ready zip
@@ -29,8 +29,8 @@ npm run zip            # store-ready zip
 ### Share it with friends
 
 **Simplest: just send the extension folder.** The built extension is checked in under [releases/](releases/) as a `.tar.gz` and a `.zip`, with install steps in [releases/README.md](releases/README.md). Direct links:
-- Windows: https://github.com/ankrypted/tabbed-in/raw/dev/releases/tabbed-in-0.2.1-extension.zip
-- macOS / Linux: https://github.com/ankrypted/tabbed-in/raw/dev/releases/tabbed-in-0.2.1-extension.tar.gz
+- Windows: https://github.com/ankrypted/tabbed-in/raw/dev/releases/tabbed-in-0.3.0-extension.zip
+- macOS / Linux: https://github.com/ankrypted/tabbed-in/raw/dev/releases/tabbed-in-0.3.0-extension.tar.gz
 
 To rebuild them after a code change: `npm run release:extension` (builds, then writes both into `releases/`; the archive is reproducible, so unchanged code gives identical bytes).
 
